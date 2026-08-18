@@ -1,0 +1,16 @@
+{
+  "id": "gen1-better-menus",
+  "name": "Gen1 Better Menus",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "overhaul",
+  "category": "UI",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "permissions": ["engine_internals", "network"],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Enhanced widescreen menus, frames, and palette options for Gen1Recomp"
+}
