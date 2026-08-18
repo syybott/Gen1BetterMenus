@@ -4,7 +4,7 @@ Enhanced widescreen menus, frames, and palette options for Gen1Recomp.
 
 ## Features
 
-- Widescreen menu layouts designed for the extended widescreen display option
+- Widescreen menus and battle UI designed for Gen1Recomp's [`BATTLE HUD: EXTENDED`](https://github.com/bryanthaboi/gen1recomp/pull/1378) option
 - Improved spacing and readability throughout the interface
 - Consistent framed menus based on the original Pokémon UI
 - Multiple menu palette choices

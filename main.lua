@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.0
+-- Gen1BetterMenus 1.0.2
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -868,15 +868,15 @@ return function(mod)
   activeMod = mod
   local frameGame
 
-  local function visibleYellowTitle(game)
+  local function visibleTitle(game)
     local top = game and game.stack and game.stack:top()
     local states = game and game.stack and game.stack.states or {}
     for i = 1, #states do
       local title = states[i]
-      if getmetatable(title) == TitleState and title.yellowLayout
+      if getmetatable(title) == TitleState
          and (top == title or (top and
            (top.enhancedTitleMenu or top.enhancedTitleInfo))) then
-        return true
+        return title
       end
     end
     return false
@@ -923,10 +923,16 @@ return function(mod)
   end)
   mod.hooks:wrap("render.letterbox", function(next, ctx)
     next(ctx)
-    if not (visibleYellowTitle(frameGame) and ctx and ctx.ww and ctx.wh) then
+    local title = visibleTitle(frameGame)
+    if not (title and ctx and ctx.ww and ctx.wh) then
       return
     end
-    local titleColors = PaletteFX.effectiveColors(YELLOW_TITLE_PIKACHU)
+    local sourceColors = YELLOW_TITLE_PIKACHU
+    if not title.yellowLayout then
+      local zones = title:sgbPalettes(frameGame)
+      sourceColors = zones and zones[1] and zones[1].colors or sourceColors
+    end
+    local titleColors = PaletteFX.effectiveColors(sourceColors)
     local paper = titleColors and titleColors[1] or { 255, 255, 255 }
     local r, green, b, a = love.graphics.getColor()
     love.graphics.setColor(
