@@ -1,7 +1,8 @@
--- Gen1 Better Menus 0.1.0
+-- Gen1BetterMenus 0.1.4
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
+local Renderer = require("src.render.Renderer")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 
@@ -49,6 +50,18 @@ local PALETTES = {
     { 248, 255, 240 }, { 160, 224, 184 },
     { 48, 152, 112 }, { 16, 56, 48 },
   },
+}
+
+-- Yellow's CGB title colors.  The normal SGB title palettes deliberately use
+-- softer yellow, lavender, and pink shades; the Yellow title art instead uses
+-- the vivid CGBBasePalettes colors seen on the intended full-color title.
+local YELLOW_TITLE_LOGO = {
+  { 255, 255, 255 }, { 255, 255, 0 },
+  { 58, 58, 206 }, { 0, 0, 140 },
+}
+local YELLOW_TITLE_PIKACHU = {
+  { 255, 255, 255 }, { 255, 255, 0 },
+  { 255, 8, 8 }, { 25, 25, 25 },
 }
 
 local activeMod
@@ -254,10 +267,11 @@ local function installMenuLayout()
   local originalOpenMenu = TitleState.openMenu
   local originalTitleNew = TitleState.new
   local originalTitleDraw = TitleState.draw
+  local originalTitlePalettes = TitleState.sgbPalettes
 
   local function colorizeYellowPikachu(game, source)
-    local logo = PaletteFX.effectiveColors(PaletteFX.pal(game.data, "LOGO2"))
-    local pika = PaletteFX.effectiveColors(PaletteFX.pal(game.data, "MEWMON"))
+    local logo = PaletteFX.effectiveColors(YELLOW_TITLE_LOGO)
+    local pika = PaletteFX.effectiveColors(YELLOW_TITLE_PIKACHU)
     if not (logo and pika) then return nil end
     if type(source) == "table" then source = source.path end
     source = source or "assets/generated/title/pikachu.png"
@@ -284,6 +298,7 @@ local function installMenuLayout()
        or not info.title or not info.save then return end
     local tw, th = menu.tw, menu.th
     info.titleUiBox = { 0, 0, tw - 1, th - 1 }
+    info.enhancedTitleInfo = true
     info.uiSize = function() return UI_W, UI_H end
     info.isWideBattleLayout = function() return true end
     info.isOpaque = false
@@ -321,7 +336,12 @@ local function installMenuLayout()
       opts.rowStep, opts.th = 1, #items + 2
     end
     if opts.startCloses then
-      opts.tx, opts.ty, opts.tw = 20, 0, 18
+      local widest = 0
+      for _, item in ipairs(items) do
+        widest = math.max(widest, #(Font.split(item.label or "")))
+      end
+      opts.tw = math.max(10, widest + 3)
+      opts.tx, opts.ty = UI_TW - opts.tw, 0
       opts.anchor = "topright"
     end
     local self = originalNew(game, items, opts)
@@ -361,15 +381,74 @@ local function installMenuLayout()
 
   TitleState.draw = function(self)
     originalTitleDraw(self)
-    if self.enhancedYellowPikachu then
-      local w, h = self.yellowPikachu:getDimensions()
-      PaletteFX.markTrueColor(32, 64 - (self.scy or 0), w, h)
+    local top = self.game and self.game.stack and self.game.stack:top()
+    local titleVisible = top == self or (top and
+      (top.enhancedTitleMenu or top.enhancedTitleInfo))
+    if self.enhancedYellowPikachu and titleVisible then
+      PaletteFX.markUiSpriteRedraw(
+        self.yellowPikachu, nil, 32, 64 - (self.scy or 0))
     end
+  end
+
+  TitleState.sgbPalettes = function(self, game)
+    local top = game and game.stack and game.stack:top()
+    if top and top.titleUiBox
+       and (top.enhancedTitleMenu or top.enhancedTitleInfo) then
+      -- Stock TitleState appends the top state's menu box to its classic
+      -- 160px palette list. The engine then centres that entire list inside
+      -- our 304px title canvas, shifting the box over the title logo. The
+      -- render.zones hook below already colors the wide box at its real
+      -- coordinates, so suppress only the stale classic copy.
+      local box = top.titleUiBox
+      top.titleUiBox = nil
+      local ok, result = pcall(originalTitlePalettes, self, game)
+      top.titleUiBox = box
+      if not ok then error(result) end
+      if self.yellowLayout and result then
+        if result[1] then result[1].colors = YELLOW_TITLE_LOGO end
+        if result[2] then result[2].colors = YELLOW_TITLE_PIKACHU end
+        if result[3] then result[3].colors = YELLOW_TITLE_LOGO end
+        result[#result + 1] = PaletteFX.zone(
+          PaletteFX.GRAYS, 0, 17, 19, 17)
+      end
+      return result
+    end
+    local result = originalTitlePalettes(self, game)
+    if self.yellowLayout and result then
+      if result[1] then result[1].colors = YELLOW_TITLE_LOGO end
+      if result[2] then result[2].colors = YELLOW_TITLE_PIKACHU end
+      if result[3] then result[3].colors = YELLOW_TITLE_LOGO end
+      result[#result + 1] = PaletteFX.zone(
+        PaletteFX.GRAYS, 0, 17, 19, 17)
+    end
+    return result
   end
 
   Menu.uiSize = function() return UI_W, UI_H end
   Menu.isWideBattleLayout = function() return true end
   Menu.isOpaque = false
+end
+
+local function installBattlePaletteIsolation()
+  local originalBlitCanvas = Renderer.blitCanvas
+  Renderer.blitCanvas = function(self, canvas, sx, sy, zones, ...)
+    if canvas == self.canvas and zones then
+      local filtered = {}
+      for i = 1, #zones do
+        if not zones[i].gen1BetterMenusBattleUI then
+          filtered[#filtered + 1] = zones[i]
+        end
+      end
+      zones = filtered
+    end
+    return originalBlitCanvas(self, canvas, sx, sy, zones, ...)
+  end
+end
+
+local function battleUIZone(palette, tx1, ty1, tx2, ty2)
+  local zone = PaletteFX.zone(palette, tx1, ty1, tx2, ty2)
+  zone.gen1BetterMenusBattleUI = true
+  return zone
 end
 
 local function locationBannerDuration(game)
@@ -519,7 +598,7 @@ local function installSupportingScreens()
       PartyMenu.drawIcon(self.game, mon, x + 8, y,
                          i == self.index, self.blink or 0)
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(truncate(mon.nickname or def.name, 9), x + 32, y)
+      Font.draw(truncate(mon.nickname or def.name, 10), x + 24, y)
       if mon.level < 100 then
         HudTiles.tile(0x6E, x + 112, y)
         Font.draw(tostring(mon.level), x + 120, y)
@@ -624,11 +703,15 @@ local function installManagerLayout()
 
   ManagerState.drawFooter = function(self, line1, line2)
     if self.notice then
-      drawCut(self.notice, 16, 15 * 8, 34)
+      drawCut(self.notice, 16, 16 * 8, 34)
       return
     end
-    if line1 then drawCut(line1, 16, 15 * 8, 34) end
-    if line2 then drawCut(line2, 16, 16 * 8, 34) end
+    if line2 then
+      if line1 then drawCut(line1, 16, 15 * 8, 34) end
+      drawCut(line2, 16, 16 * 8, 34)
+    elseif line1 then
+      drawCut(line1, 16, 16 * 8, 34)
+    end
   end
 
   ManagerState.drawDetail = function(self)
@@ -658,9 +741,20 @@ local function installManagerLayout()
       Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8, 10 * 8)
     end
     local rows = self:rowsForScreen()
-    for i, row in ipairs(rows) do
-      drawCut(row.label, 32, (10 + i) * 8, 32)
-      if i == self.cursor then Font.drawCode(Theme.cursor, 24, (10 + i) * 8) end
+    local visible = 5
+    local first = math.max(1, self.cursor - visible + 1)
+    first = math.min(first, math.max(1, #rows - visible + 1))
+    for slot = 1, visible do
+      local i = first + slot - 1
+      local row = rows[i]
+      if not row then break end
+      drawCut(row.label, 32, (10 + slot) * 8, 32)
+      if i == self.cursor then
+        Font.drawCode(Theme.cursor, 24, (10 + slot) * 8)
+      end
+    end
+    if first + visible - 1 < #rows then
+      Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8, 15 * 8)
     end
     self:drawFooter("A:CHOOSE B:BACK")
   end
@@ -772,6 +866,22 @@ end
 
 return function(mod)
   activeMod = mod
+  local frameGame
+
+  local function visibleYellowTitle(game)
+    local top = game and game.stack and game.stack:top()
+    local states = game and game.stack and game.stack.states or {}
+    for i = 1, #states do
+      local title = states[i]
+      if getmetatable(title) == TitleState and title.yellowLayout
+         and (top == title or (top and
+           (top.enhancedTitleMenu or top.enhancedTitleInfo))) then
+        return true
+      end
+    end
+    return false
+  end
+
   mod.options:define({
     { key = "palette", label = "MENU PALETTE", type = "choice",
       default = "soulsilver",
@@ -790,13 +900,62 @@ return function(mod)
   installOptionsLayout()
   installListLayout()
   installMenuLayout()
+  installBattlePaletteIsolation()
   installDialogueLayout()
   installSupportingScreens()
   installManagerLayout()
   installLinkLayout()
   installReportLayout()
   installLocationBanners(mod)
+  mod.hooks:wrap("battle.overlay", function(next, battle)
+    next(battle)
+    if not (battle and battle.wideLayout and battle:wideLayout()
+            and battle.extendedHUD and battle:extendedHUD()) then return end
+    local g = love.graphics
+    local r, green, b, a = g.getColor()
+    local blend, alpha = g.getBlendMode()
+    g.setBlendMode("replace")
+    g.setColor(0, 0, 0, 0)
+    g.rectangle("fill", 75, 121, 2, 1)
+    g.rectangle("fill", 227, 121, 2, 1)
+    g.setBlendMode(blend, alpha)
+    g.setColor(r, green, b, a)
+  end)
+  mod.hooks:wrap("render.letterbox", function(next, ctx)
+    next(ctx)
+    if not (visibleYellowTitle(frameGame) and ctx and ctx.ww and ctx.wh) then
+      return
+    end
+    local titleColors = PaletteFX.effectiveColors(YELLOW_TITLE_PIKACHU)
+    local paper = titleColors and titleColors[1] or { 255, 255, 255 }
+    local r, green, b, a = love.graphics.getColor()
+    love.graphics.setColor(
+      paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
+    love.graphics.rectangle("fill", 0, 0, ctx.ww, ctx.wh)
+    love.graphics.setColor(r, green, b, a)
+  end)
+  mod.hooks:wrap("render.hud", function(next, game, viewport)
+    next(game, viewport)
+    local top = game and game.stack and game.stack:top()
+    local options = game and game.save and game.save.options
+    if not (top and getmetatable(top) == BattleState
+            and top.extendedHUD and top:extendedHUD()
+            and top.wantsFillScale and top:wantsFillScale()
+            and options and options.battleBg == "white"
+            and viewport and viewport.gameY and viewport.gameY > 0) then
+      return
+    end
+    local scale = math.min(viewport.height / UI_H, viewport.width / UI_W)
+    local uiX = math.floor((viewport.width - UI_W * scale) / 2)
+    local uiY = math.floor((viewport.height - UI_H * scale) / 2)
+    local x = math.floor(uiX + 128 * scale)
+    local r, green, b, a = love.graphics.getColor()
+    love.graphics.setColor(PaletteFX.paperShade(game.data))
+    love.graphics.rectangle("fill", x, 0, viewport.width - x, uiY)
+    love.graphics.setColor(r, green, b, a)
+  end)
   mod.hooks:wrap("render.zones", function(next, game, zones)
+    frameGame = game
     local out = next(game, zones) or {}
     local top = game and game.stack and game.stack:top()
     local mt = top and getmetatable(top)
@@ -804,12 +963,12 @@ return function(mod)
     if mt == BattleState and top.wideLayout and top:wideLayout() then
       -- Wide battle draws true-colour arena and Pokémon, so recolour only
       -- the three opaque UI panels rather than the completed battle canvas.
-      out[#out + 1] = PaletteFX.zone(colors(), 0, 0, 15, 3)
-      out[#out + 1] = PaletteFX.zone(colors(), 23, 7, 37, 11)
-      out[#out + 1] = PaletteFX.zone(colors(), 0, 13, 37, 17)
+      out[#out + 1] = battleUIZone(colors(), 0, 0, 15, 3)
+      out[#out + 1] = battleUIZone(colors(), 23, 7, 37, 11)
+      out[#out + 1] = battleUIZone(colors(), 0, 13, 37, 17)
       -- The HP bars retain their semantic green/yellow/red colors.
-      out[#out + 1] = PaletteFX.zone(false, 1, 2, 14, 2)
-      out[#out + 1] = PaletteFX.zone(false, 24, 9, 36, 9)
+      out[#out + 1] = battleUIZone(false, 1, 2, 14, 2)
+      out[#out + 1] = battleUIZone(false, 24, 9, 36, 9)
     else
       local title
       local states = game and game.stack and game.stack.states or {}
@@ -846,7 +1005,8 @@ return function(mod)
         end
       end
 
-      if updateLocationBanner(game) then
+      local locationVisible = updateLocationBanner(game)
+      if locationVisible and states[first] == game.overworld then
         out[#out + 1] = PaletteFX.zone(colors(), 0, 15, 19, 17)
       end
     end
