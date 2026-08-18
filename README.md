@@ -1,6 +1,6 @@
 # Gen1BetterMenus
 
-Enhanced widescreen menus, frames, and palette options for Gen1Recomp.
+Enhanced widescreen menus, frames, and palette options for Gen1Recomp. The mod will not display correctly without BATTLE HUD: EXTENDED enabled in Gen1Recomp. Portrait support is planned for a later release. 
 
 ## Features
 
