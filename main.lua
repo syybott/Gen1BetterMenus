@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.2
+-- Gen1BetterMenus 1.0.3
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -380,8 +380,19 @@ local function installMenuLayout()
   end
 
   TitleState.draw = function(self)
-    originalTitleDraw(self)
     local top = self.game and self.game.stack and self.game.stack:top()
+    local titleOptions = top and getmetatable(top) == OptionsMenu
+    local currentSprite
+    if titleOptions then
+      -- The wide Options panel completely covers the title canvas. Suppress
+      -- the hidden Red/Blue title Pokémon so its true-color redraw rectangle
+      -- cannot be replayed over the finished panel during the palette pass.
+      top.titleUiBox = { 0, 0, UI_TW - 1, UI_TH - 1 }
+      currentSprite = self.currentSprite
+      self.currentSprite = function() return nil, false end
+    end
+    originalTitleDraw(self)
+    if currentSprite then self.currentSprite = currentSprite end
     local titleVisible = top == self or (top and
       (top.enhancedTitleMenu or top.enhancedTitleInfo))
     if self.enhancedYellowPikachu and titleVisible then
