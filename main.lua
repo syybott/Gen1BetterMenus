@@ -93,7 +93,7 @@ local function makeWideState(class)
     local states = self.game and self.game.stack and self.game.stack.states
       or {}
     for i = 1, #states do
-      if states[i] ~= self and states[i] and states[i].isBattle then
+      if states[i] ~= self and states[i] and (states[i].isBattle or not states[i].isOverworld) then
         return true
       end
     end
@@ -516,7 +516,7 @@ local function installMenuLayout()
     local states = self.game and self.game.stack and self.game.stack.states
       or {}
     for i = 1, #states do
-      if states[i] ~= self and states[i] and states[i].isBattle then
+      if states[i] ~= self and states[i] and (states[i].isBattle or not states[i].isOverworld) then
         return true
       end
     end
