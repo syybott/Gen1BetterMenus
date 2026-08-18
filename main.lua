@@ -1,8 +1,9 @@
--- Gen1BetterMenus 1.0.5
+-- Gen1BetterMenus 1.0.6
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
 local Renderer = require("src.render.Renderer")
+local Pipelines = require("src.render.Pipelines")
 local Zoom = require("src.render.Zoom")
 local Game = require("src.core.Game")
 local Theme = require("src.ui.Theme")
@@ -1053,10 +1054,12 @@ return function(mod)
     next(game, viewport)
     local top = game and game.stack and game.stack:top()
     local options = game and game.save and game.save.options
+	local pipelineId = Pipelines.worldPipeline()
     if not (top and getmetatable(top) == BattleState
             and top.extendedHUD and top:extendedHUD()
             and top.wantsFillScale and top:wantsFillScale()
             and options and options.battleBg == "white"
+			and not pipelineId
             and viewport and viewport.gameY and viewport.gameY > 0) then
       return
     end
