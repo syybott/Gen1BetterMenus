@@ -92,6 +92,18 @@ local function makeWideState(class)
   class.isWideBattleLayout = function(self)
     local states = self.game and self.game.stack and self.game.stack.states
       or {}
+	  local base = self.game.stack:visibleBase()
+	  local baseState = states[base]
+      if baseState and baseState.isOverworld then
+	    local hasBattle = false
+        for i = 1, #states do
+		  if states[i] ~= self and states[i] and states[i].isBattle then
+		  hasBattle = true
+		  break
+		end
+	end
+	if not hasBattle then return false end
+end	
     for i = 1, #states do
       if states[i] ~= self and states[i] and (states[i].isBattle or not states[i].isOverworld) then
         return true
