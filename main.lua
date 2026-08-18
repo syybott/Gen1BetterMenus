@@ -1,8 +1,10 @@
--- Gen1BetterMenus 1.0.3
+-- Gen1BetterMenus 1.0.4
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
 local Renderer = require("src.render.Renderer")
+local Zoom = require("src.render.Zoom")
+local Game = require("src.core.Game")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 
@@ -84,12 +86,86 @@ end
 
 local function makeWideState(class)
   class.uiSize = function() return UI_W, UI_H end
-  -- Prevent Game.lua from centering this already-wide state when it is
-  -- opened over the native 304px battle composition.
-  class.isWideBattleLayout = function() return true end
+  -- Only inherit the wide-battle marker when a battle actually owns the
+  -- stack. Claiming it over the overworld makes Game.lua apply the battle's
+  -- 72px classic-content offset to the map beneath the menu.
+  class.isWideBattleLayout = function(self)
+    local states = self.game and self.game.stack and self.game.stack.states
+      or {}
+    for i = 1, #states do
+      if states[i] ~= self and states[i] and states[i].isBattle then
+        return true
+      end
+    end
+    return false
+  end
   -- These menus are panels over the field. Keeping them non-opaque lets the
   -- normal world pass replace the black letterbox around the wide panel.
   class.isOpaque = false
+end
+
+local function installOverworldScaleStability()
+  local originalDraw = Game.draw
+  local originalUiScale = Renderer.uiScale
+  local originalOffsetRange = Zoom.offsetRange
+
+  local function fitFor(w, h)
+    local oldW, oldH = Renderer.uiWidth, Renderer.uiHeight
+    Renderer.uiWidth, Renderer.uiHeight = w, h
+    local scale = Renderer:fitScale()
+    Renderer.uiWidth, Renderer.uiHeight = oldW, oldH
+    return scale
+  end
+
+  Game.draw = function(self)
+    local states = self.stack and self.stack.states or {}
+    local top = self.stack and self.stack:top()
+    local worldBelow, battlePresent = false, false
+    for i = 1, #states do
+      if states[i] == self.overworld then worldBelow = true end
+      if states[i] and states[i].isBattle then battlePresent = true end
+    end
+
+    local wideW, wideH
+    if top and top ~= self.overworld and top.uiSize then
+      wideW, wideH = top:uiSize()
+    end
+    local stabilize = worldBelow and not battlePresent
+      and wideW and wideH and wideW > Renderer.WIDTH
+    if not stabilize then return originalDraw(self) end
+
+    local classicScale = fitFor(Renderer.WIDTH, Renderer.HEIGHT)
+    local wideScale = fitFor(wideW, wideH)
+    local savedOffset = Zoom.offset
+    local desiredScale = Zoom.scale(classicScale)
+    local classicLo, classicHi = originalOffsetRange(classicScale)
+
+    -- Wide overlays reduce fitScale because their canvas is 304px across.
+    -- Translate the saved survey-zoom offset for this draw only so the world
+    -- retains exactly the scale it had before the overlay opened. UI keeps
+    -- using the player's unmodified offset and its own wide fit scale.
+    Zoom.offset = desiredScale - wideScale
+    Zoom.offsetRange = function(scale)
+      if scale == wideScale then
+        return classicScale + classicLo - wideScale,
+               classicScale + classicHi - wideScale
+      end
+      return originalOffsetRange(scale)
+    end
+    Renderer.uiScale = function(renderer)
+      local adjusted = Zoom.offset
+      Zoom.offset = savedOffset
+      local scale = originalUiScale(renderer)
+      Zoom.offset = adjusted
+      return scale
+    end
+
+    local ok, err = pcall(originalDraw, self)
+    Renderer.uiScale = originalUiScale
+    Zoom.offsetRange = originalOffsetRange
+    Zoom.offset = savedOffset
+    if not ok then error(err) end
+  end
 end
 
 local function rowText(row, game)
@@ -436,7 +512,16 @@ local function installMenuLayout()
   end
 
   Menu.uiSize = function() return UI_W, UI_H end
-  Menu.isWideBattleLayout = function() return true end
+  Menu.isWideBattleLayout = function(self)
+    local states = self.game and self.game.stack and self.game.stack.states
+      or {}
+    for i = 1, #states do
+      if states[i] ~= self and states[i] and states[i].isBattle then
+        return true
+      end
+    end
+    return false
+  end
   Menu.isOpaque = false
 end
 
@@ -909,6 +994,7 @@ return function(mod)
   })
 
   installOptionsLayout()
+  installOverworldScaleStability()
   installListLayout()
   installMenuLayout()
   installBattlePaletteIsolation()
