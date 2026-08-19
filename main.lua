@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.6
+-- Gen1BetterMenus 1.0.7
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -10,6 +10,7 @@ local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 
 local OptionRows = require("src.ui.OptionRows")
+local Screens = require("src.ui.Screens")
 local OptionsMenu = require("src.ui.OptionsMenu")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
@@ -18,6 +19,7 @@ local PartyMenu = require("src.ui.PartyMenu")
 local SummaryMenu = require("src.ui.SummaryMenu")
 local TextBox = require("src.render.TextBox")
 local ChoiceBox = require("src.ui.ChoiceBox")
+local QuantityBox = require("src.ui.QuantityBox")
 local ManagerState = require("src.mods.ManagerState")
 local LinkState = require("src.link.LinkState")
 local BattleState = require("src.battle.BattleState")
@@ -245,6 +247,24 @@ end
 local function installOptionsLayout()
   OptionRows.VISIBLE = 12
 
+local originalScreensBuild = Screens.build
+
+Screens.push = function(game, id, ...)
+  local inst = originalScreensBuild(game, id, ...)
+
+  if inst and inst.rows and type(inst.screenId) == "string"
+      and (inst.screenId:match("Options$") or inst.screenId:match("Settings$")) then
+    inst.uiSize = function()
+      return UI_W, UI_H
+    end
+    inst.isWideBattleLayout = function()
+      return true
+    end
+  end
+
+  game.stack:push(inst)
+  return inst
+end
   OptionRows.draw = function(game, rows, index, scroll, bottomLabel, bottomRow)
     drawOuterFrame("OPTIONS")
     for slot = 1, OptionRows.VISIBLE do
@@ -280,6 +300,20 @@ end
 
 local function installListLayout()
   makeWideState(ListMenu)
+  QuantityBox.uiSize = function() return UI_W, UI_H end
+  QuantityBox.isWideBattleLayout = function() return false end
+  local originalListMenuNew = ListMenu.new
+
+ListMenu.new = function(game, ...)
+  local self = originalListMenuNew(game, ...)
+
+  local parent = game and game.stack and game.stack:top()
+  if parent and getmetatable(parent) == Menu then
+  self.isWideBattleLayout = function() return false end
+  end
+
+  return self
+end
   ListMenu.sgbPalettes = wholeWide
   -- PokedexMenu stamps its own palette function onto the ListMenu instance,
   -- so update that factory-owned function as well as the generic class.
@@ -525,17 +559,36 @@ local function installMenuLayout()
   end
 
   Menu.uiSize = function() return UI_W, UI_H end
-  Menu.isWideBattleLayout = function(self)
-    local states = self.game and self.game.stack and self.game.stack.states
-      or {}
-    for i = 1, #states do
-      if states[i] ~= self and states[i] and (states[i].isBattle or not states[i].isOverworld) then
-        return true
-      end
-    end
+Menu.isWideBattleLayout = function(self)
+  local states = self.game and self.game.stack and self.game.stack.states
+    or {}
+	for i = 1, #states - 1 do
+  if states[i] == self and getmetatable(states[i + 1]) == ListMenu then
     return false
   end
+end
+  for i = 1, #states do
+    if states[i] ~= self and states[i]
+        and (states[i].isBattle or not states[i].isOverworld) then
+      return true
+    end
+  end
+
+  return false
+end
   Menu.isOpaque = false
+  local originalMenuDraw = Menu.draw
+  Menu.draw = function(self)
+  local states = self.game and self.game.stack and self.game.stack.states or {}
+
+  for i = 1, #states - 1 do
+    if states[i] == self and getmetatable(states[i + 1]) == ListMenu then
+      return
+    end
+  end
+
+  return originalMenuDraw(self)
+ end
 end
 
 local function installBattlePaletteIsolation()
