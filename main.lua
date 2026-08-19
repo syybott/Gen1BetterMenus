@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.8
+-- Gen1BetterMenus 1.0.10
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -95,6 +95,24 @@ local function makeWideState(class)
   class.isWideBattleLayout = function(self)
     local states = self.game and self.game.stack and self.game.stack.states
       or {}
+	    -- An opaque child completely replaces this screen.
+  -- Do not let this wide menu masquerade as a wide battle underneath it,
+  -- or Game.drawBaseInStack will deliberately draw through the opaque child.
+  local selfIndex
+  for i = 1, #states do
+    if states[i] == self then
+      selfIndex = i
+      break
+    end
+  end
+
+  if selfIndex then
+    for i = selfIndex + 1, #states do
+      if states[i] and states[i].isOpaque then
+        return false
+      end
+    end
+  end
 	  local base = self.game.stack:visibleBase()
 	  local baseState = states[base]
       if baseState and baseState.isOverworld then
@@ -501,6 +519,12 @@ local function installMenuLayout()
       opts.anchor = "topright"
     end
     local self = originalNew(game, items, opts)
+	local parent = game and game.stack and game.stack:top()
+	if parent and getmetatable(parent) == ListMenu
+      and not self.anchor then
+  self.tx = self.tx + (UI_TW - 20)
+  self.isWideBattleLayout = function() return false end
+end
     self.enhancedTitleMenu = titleMenu
     return self
   end
