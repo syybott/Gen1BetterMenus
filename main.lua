@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.10
+-- Gen1BetterMenus 1.0.11
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -31,6 +31,9 @@ local UI_W, UI_H = 304, 144
 local UI_TW, UI_TH = UI_W / 8, UI_H / 8
 
 local PALETTES = {
+  gameboy = PaletteFX.CLASSIC,
+  blackwhite = PaletteFX.GRAYS,
+
   soulsilver = {
     { 248, 248, 248 }, { 168, 208, 232 },
     { 72, 128, 168 }, { 16, 40, 72 },
@@ -1114,6 +1117,8 @@ return function(mod)
     { key = "palette", label = "MENU PALETTE", type = "choice",
       default = "soulsilver",
       choices = {
+	    { "Game Boy", "gameboy" },
+		{ "BLACK & WHITE", "blackwhite" },
         { "SOULSILVER", "soulsilver" },
         { "HEARTGOLD", "heartgold" },
         { "FIRERED", "firered" },
