@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.11
+-- Gen1BetterMenus 1.0.12
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1117,8 +1117,8 @@ return function(mod)
     { key = "palette", label = "MENU PALETTE", type = "choice",
       default = "soulsilver",
       choices = {
-	    { "Game Boy", "gameboy" },
-		{ "BLACK & WHITE", "blackwhite" },
+	    { "GAME BOY", "gameboy" },
+		{ "BLACK AND WHITE", "blackwhite" },
         { "SOULSILVER", "soulsilver" },
         { "HEARTGOLD", "heartgold" },
         { "FIRERED", "firered" },
