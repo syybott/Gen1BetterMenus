@@ -1,35 +1,117 @@
-# Gen1BetterMenus
+# Gen1BetterMenus 🎮
 
-Enhanced widescreen menus, frames, and palette options for Gen1Recomp. The mod will not display correctly without BATTLE HUD: EXTENDED enabled in Gen1Recomp. Portrait support is planned for a later release. 
+**A faithful widescreen UI for Gen1Recomp.**
 
-## Features
+Gen1BetterMenus expands Pokémon Gen 1's original interface for widescreen displays while preserving the look, structure, and visual language of the original games.
 
-- Widescreen menus and battle UI designed for Gen1Recomp's [`BATTLE HUD: EXTENDED`](https://github.com/bryanthaboi/gen1recomp/pull/1378) option
-- Improved spacing and readability throughout the interface
-- Consistent framed menus based on the original Pokémon UI
-- Multiple menu palette choices
+The goal is not to redesign Gen 1 into a modern PC interface. It is to make widescreen Gen 1 feel like it was always supposed to look this way.
+
+Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the additional screen space properly used.
+
+> 🖥️ **Requires `BATTLE HUD: EXTENDED` to be enabled in Gen1Recomp.**
+
+## ✨ Features
+
+- Native **304×144 widescreen UI layouts**
+- Faithful Gen 1-style frames, typography, spacing, and menu structure
+- Extended battle UI designed around Gen1Recomp's [`BATTLE HUD: EXTENDED`](https://github.com/bryanthaboi/gen1recomp/pull/1378)
+- Widescreen title screen menus and Continue information
+- Widescreen Options and Settings screens
+- Expanded Party, Pokédex, Summary, inventory, and list menus
+- Improved dialogue and choice-box layouts
+- Widescreen Mod Manager interface
+- Improved location banners
+- Widescreen Link / Bois Club interface
+- Stable overworld scaling when wide menus are opened
+- Proper handling of widescreen UI palette zones
+- Preservation of true-color battle graphics and semantic HP-bar colors
+- Pokémon Yellow-specific title screen color handling
+- Multiple selectable menu palettes
 - Optional inverse palette mode
-- Improved title, party, Pokédex, battle, location, and system menus
-- Preserves the visual style and functionality of the original games
 
-## Installation
+## 🎯 Design Philosophy
 
-1. Download the latest `Gen1BetterMenus` ZIP
-2. Open Gen1Recomp
-3. Open the mod manager
-4. Import the ZIP
-5. Enable `Gen1BetterMenus`
-6. Enable the extended widescreen display option
+Gen1BetterMenus is intentionally **not a modern UI replacement**.
 
-## Configuration
+The project follows a simple rule:
 
-Open `Gen1BetterMenus` in the mod manager to select a menu palette or enable inverse colors.
+**Extend Gen 1. Don't replace it.**
 
-## Compatibility
+The original game's UI conventions are retained wherever possible — borders, text layout, cursor behavior, menu hierarchy, spacing, and overall composition.
 
-- Designed for Gen1Recomp and its extended widescreen display mode
-- Compatible with Groovy Palette & Frames and other mods that do not change the game’s UI or menus
+Widescreen space is treated as additional room the original interface can naturally occupy rather than an excuse to redesign the game.
 
-## Status
+The target is a UI that feels less like a mod and more like a hypothetical official widescreen version of Pokémon Gen 1.
 
-Gen1BetterMenus is currently in active development. Additional menus and visual inconsistencies may be addressed in future releases.
+## 🎨 Palette Options
+
+The menu palette can be changed independently through the Gen1Recomp Mod Manager.
+
+Included palettes:
+
+- Game Boy
+- Black & White
+- SoulSilver
+- HeartGold
+- FireRed
+- LeafGreen
+- Crystal
+- Emerald
+
+Each palette can also be displayed using the optional **Inverse** setting.
+
+The default palette is **SoulSilver**.
+
+## 📦 Installation
+
+1. Download the latest `Gen1BetterMenus` ZIP.
+2. Open **Gen1Recomp**.
+3. Open the **Mod Manager**.
+4. Import the ZIP.
+5. Enable **Gen1BetterMenus**.
+6. Enable **`BATTLE HUD: EXTENDED`** in Gen1Recomp.
+
+The mod is designed around the extended widescreen layout and will not display correctly with the standard battle HUD.
+
+## ⚙️ Configuration
+
+Open **Gen1BetterMenus** in the Gen1Recomp Mod Manager.
+
+Available settings:
+
+**MENU PALETTE**  
+Select the palette used for menus and UI panels.
+
+**INVERSE**  
+Reverse the selected palette from light-to-dark into dark-to-light.
+
+Changes can be made directly through the Mod Manager.
+
+## 🧩 Compatibility
+
+Gen1BetterMenus currently targets:
+
+**Gen1Recomp `>= 0.1.99` and `< 2.0.0`**
+
+The mod is designed specifically for Gen1Recomp's widescreen rendering system.
+
+It is compatible with **Groovy Palette & Frames** and should generally coexist with mods that do not replace or substantially modify the same UI/menu rendering code.
+
+Mods that independently redesign menus, battle UI, dialogue boxes, or other interface components may conflict visually or functionally.
+
+## 🚧 Current Status
+
+Gen1BetterMenus is in active development.
+
+Most major interface families have already been adapted for widescreen, but individual screens, edge cases, and visual inconsistencies may continue to be refined as development progresses.
+
+Portrait-oriented layouts are planned for a future release.
+
+## 🕹️ Project Goal
+
+Gen1BetterMenus exists for players who want widescreen Pokémon without losing Pokémon Gen 1.
+No modern dashboard.
+No completely new visual language.
+No attempt to make a 1990s Game Boy RPG look like a contemporary PC game.
+
+Just **Gen 1, with room to breathe.**
