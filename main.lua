@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.9
+-- Gen1BetterMenus 1.0.10
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -156,8 +156,17 @@ local function installOverworldScaleStability()
 	local sid = top and type(top.screenId) == "string"
   and top.screenId:lower() or ""
 
-if top and top.rows
-    and (sid:match("options$") or sid:match("settings$")) then
+local dynamicOptionRows =
+  top
+  and type(top.rows) == "function"
+  and type(top.index) == "number"
+  and type(top.scroll) == "number"
+
+if top and (
+    (top.rows and
+      (sid:match("options$") or sid:match("settings$")))
+    or dynamicOptionRows
+  ) then
   top.uiSize = function() return UI_W, UI_H end
   top.isWideBattleLayout = function() return false end
 end
