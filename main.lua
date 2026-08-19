@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.7
+-- Gen1BetterMenus 1.0.8
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -135,6 +135,15 @@ local function installOverworldScaleStability()
   Game.draw = function(self)
     local states = self.stack and self.stack.states or {}
     local top = self.stack and self.stack:top()
+	local sid = top and type(top.screenId) == "string"
+  and top.screenId:lower() or ""
+
+if top and top.rows
+    and (sid:match("options$") or sid:match("settings$")) then
+  top.uiSize = function() return UI_W, UI_H end
+  top.isWideBattleLayout = function() return false end
+end
+
     local worldBelow, battlePresent = false, false
     for i = 1, #states do
       if states[i] == self.overworld then worldBelow = true end
@@ -253,13 +262,16 @@ Screens.push = function(game, id, ...)
   local inst = originalScreensBuild(game, id, ...)
 
   if inst and inst.rows and type(inst.screenId) == "string"
-      and (inst.screenId:match("Options$") or inst.screenId:match("Settings$")) then
+      and (inst.screenId:match("Options$") 
+	    or inst.screenId:match("Settings$")) then
     inst.uiSize = function()
       return UI_W, UI_H
     end
     inst.isWideBattleLayout = function()
-      return true
+      return false
     end
+	
+	inst.sgbPalettes = wholeWide
   end
 
   game.stack:push(inst)
@@ -290,6 +302,27 @@ end
   end
 
   makeWideState(OptionsMenu)
+  local originalOptionsWide = OptionsMenu.isWideBattleLayout
+
+OptionsMenu.isWideBattleLayout = function(self)
+  local states = self.game and self.game.stack and self.game.stack.states or {}
+
+  for i = 1, #states - 1 do
+    if states[i] == self then
+      local child = states[i + 1]
+
+      if child and child.rows and type(child.screenId) == "string"
+          and (child.screenId:match("Options$")
+            or child.screenId:match("Settings$")) then
+        return false
+      end
+
+      break
+    end
+  end
+
+  return originalOptionsWide(self)
+end
   OptionsMenu.sgbPalettes = wholeWide
   -- ManagerState uses OptionRows for each mod's settings page. Without the
   -- same canvas declaration the compact 38-tile renderer would be clipped
