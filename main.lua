@@ -752,6 +752,16 @@ local function installDialogueLayout()
   local originalNew = TextBox.new
   TextBox.new = function(game, text, onDone, opts)
     local self = originalNew(game, text, onDone, opts)
+	
+	    local parent = game and game.stack and game.stack:top()
+    if parent and parent.uiSize then
+      local w, h = parent:uiSize()
+      if w and w > Renderer.WIDTH then
+        self.uiSize = function() return w, h end
+        self.isWideBattleLayout = function() return false end
+        self.holdsUIAnchors = true
+      end
+    end
     self.boxTx, self.boxTy, self.boxTw, self.boxTh = 0, 13, UI_TW, 5
     self.maxCols = 36
     self.textX, self.line1Y, self.line2Y = 8, 112, 128
@@ -898,7 +908,39 @@ local function installSupportingScreens()
     drawFrameOnly(0, 0, UI_TW, UI_TH)
     love.graphics.setColor(1, 1, 1, 1)
   end
+  -- Rare Candy level-up stat box: inherit the wide menu canvas and
+  -- move the stock 11-tile stats window into the added right-hand space.
+  local StatBox = BattleState.StatBox
+  local originalStatBoxNew = StatBox.new
+  local originalStatBoxDraw = StatBox.draw
 
+  StatBox.new = function(game, mon, onDone)
+    local self = originalStatBoxNew(game, mon, onDone)
+
+    local parent = game and game.stack and game.stack:top()
+    if parent and parent.uiSize then
+      local w, h = parent:uiSize()
+      if w and w > Renderer.WIDTH then
+        self.uiSize = function() return w, h end
+        self.isWideBattleLayout = function() return false end
+        self.gen1BetterMenusWide = true
+      end
+    end
+
+    return self
+  end
+
+  StatBox.draw = function(self)
+    if self.gen1BetterMenusWide then
+      love.graphics.push()
+      love.graphics.translate(UI_W - Renderer.WIDTH, 0)
+      originalStatBoxDraw(self)
+      love.graphics.pop()
+      return
+    end
+
+    originalStatBoxDraw(self)
+  end
   makeWideState(SummaryMenu)
   SummaryMenu.sgbPalettes = wholeWide
 end
