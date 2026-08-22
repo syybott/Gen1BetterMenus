@@ -1,6 +1,6 @@
 {
   "id": "gen1-better-menus",
-  "name": "Gen1BetterMenus",
+  "name": "Gen1BetterMenusBeta",
   "version": "1.0.14",
   "api": 2,
   "entry": "main.lua",

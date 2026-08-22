@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.14
+-- Gen1BetterMenusBeta 1.0.14
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -7,6 +7,7 @@ local Pipelines = require("src.render.Pipelines")
 local Zoom = require("src.render.Zoom")
 local Game = require("src.core.Game")
 local StateStack = require("src.core.StateStack")
+local ScreenPosition = require("src.core.ScreenPosition")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 
@@ -18,6 +19,7 @@ local Menu = require("src.ui.Menu")
 local BoxMenu = require("src.ui.BoxMenu")
 local PlayerPC = require("src.ui.PlayerPC")
 local PokedexMenu = require("src.ui.PokedexMenu")
+local DexEntryMenu = require("src.ui.DexEntryMenu")
 local PartyMenu = require("src.ui.PartyMenu")
 local TrainerCard = require("src.ui.TrainerCard")
 local NamingScreen = require("src.ui.NamingScreen")
@@ -34,12 +36,86 @@ local OakSpeech = require("src.ui.OakSpeech")
 local Runtime = require("src.mods.Runtime")
 local Bag = require("src.inventory.Bag")
 
-local UI_W, UI_H = 304, 144
-local UI_TW, UI_TH = UI_W / 8, UI_H / 8
+local LANDSCAPE_PROFILE = {
+  key = "landscape", w = 304, h = 144, tw = 38, th = 18,
+}
+local PORTRAIT_PROFILE = {
+  key = "portrait", w = 160, h = 224, tw = 20, th = 28,
+}
+local UI_W, UI_H = LANDSCAPE_PROFILE.w, LANDSCAPE_PROFILE.h
+local UI_TW, UI_TH = LANDSCAPE_PROFILE.tw, LANDSCAPE_PROFILE.th
 local TITLE_PANEL_TW = 13
 local TITLE_INFO_TH = 10
+local layoutGame
+
+local function isPortrait()
+  local options = layoutGame and layoutGame.save and layoutGame.save.options
+  return options and options.battleLayout ~= "wide" or false
+end
+
+local function syncLayout()
+  local profile = isPortrait() and PORTRAIT_PROFILE or LANDSCAPE_PROFILE
+  UI_W, UI_H = profile.w, profile.h
+  UI_TW, UI_TH = profile.tw, profile.th
+  return profile
+end
+
+local function adaptiveUiSize()
+  syncLayout()
+  return UI_W, UI_H
+end
+
+local function classicYOffset()
+  syncLayout()
+  return isPortrait() and math.floor((UI_H - Renderer.HEIGHT) / 2) or 0
+end
+
+local function shiftZones(zones, dx, dy)
+  local shifted = {}
+  for i = 1, #(zones or {}) do
+    local zone = zones[i]
+    local copy = {}
+    for key, value in pairs(zone) do copy[key] = value end
+    copy.x = (copy.x or 0) + (dx or 0)
+    copy.y = (copy.y or 0) + (dy or 0)
+    shifted[#shifted + 1] = copy
+  end
+  return shifted
+end
+
+-- Preserve the stock 160x144 composition for screens that do not benefit
+-- from a bespoke portrait layout, but center it inside the 160x224 canvas.
+-- PaletteFX marks are translated with the pixels so sprites remain true-color.
+local function drawClassicInPortrait(drawFn)
+  syncLayout()
+  if not isPortrait() then return drawFn() end
+
+  local dx, dy = math.floor((UI_W - Renderer.WIDTH) / 2), classicYOffset()
+  local markTrueColor = PaletteFX.markTrueColor
+  local markUiSpriteRedraw = PaletteFX.markUiSpriteRedraw
+
+  PaletteFX.markTrueColor = function(x, y, w, h)
+    return markTrueColor(x + dx, y + dy, w, h)
+  end
+  if markUiSpriteRedraw then
+    PaletteFX.markUiSpriteRedraw = function(image, quad, x, y)
+      return markUiSpriteRedraw(image, quad, x + dx, y + dy)
+    end
+  end
+
+  love.graphics.push()
+  love.graphics.translate(dx, dy)
+  local results = { pcall(drawFn) }
+  love.graphics.pop()
+
+  PaletteFX.markTrueColor = markTrueColor
+  if markUiSpriteRedraw then PaletteFX.markUiSpriteRedraw = markUiSpriteRedraw end
+  if not results[1] then error(results[2]) end
+  return unpack(results, 2)
+end
 
 local function centeredTitlePanel(th)
+  syncLayout()
   return math.floor((UI_TW - TITLE_PANEL_TW) / 2),
     math.floor((UI_TH - th) / 2)
 end
@@ -101,15 +177,17 @@ local function colors()
 end
 
 local function wholeWide()
+  syncLayout()
   return { PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1) }
 end
 
 local function makeWideState(class)
-  class.uiSize = function() return UI_W, UI_H end
+  class.uiSize = adaptiveUiSize
   -- Only inherit the wide-battle marker when a battle actually owns the
   -- stack. Claiming it over the overworld makes Game.lua apply the battle's
   -- 72px classic-content offset to the map beneath the menu.
   class.isWideBattleLayout = function(self)
+    if isPortrait() then return false end
     local states = self.game and self.game.stack and self.game.stack.states
       or {}
 	    -- An opaque child completely replaces this screen.
@@ -171,23 +249,20 @@ local function installOverworldScaleStability()
   end
 
   Game.draw = function(self)
+    layoutGame = self
+    syncLayout()
     local states = self.stack and self.stack.states or {}
     local top = self.stack and self.stack:top()
 	local sid = top and type(top.screenId) == "string"
   and top.screenId:lower() or ""
 
-local dynamicOptionRows =
-  top
-  and type(top.rows) == "function"
-  and type(top.index) == "number"
-  and type(top.scroll) == "number"
-
 if top and (
     (top.rows and
       (sid:match("options$") or sid:match("settings$")))
-    or dynamicOptionRows
+    or getmetatable(top) == OptionsMenu
+    or getmetatable(top) == ManagerState
   ) then
-  top.uiSize = function() return UI_W, UI_H end
+  top.uiSize = adaptiveUiSize
   top.isWideBattleLayout = function() return false end
 end
 
@@ -246,6 +321,7 @@ local function rowText(row, game)
 end
 
 local function drawOuterFrame(title)
+  syncLayout()
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
   Font.drawBox(0, 0, UI_TW, UI_TH)
@@ -271,14 +347,17 @@ local function pcOverlayAbove(menu)
 end
 
 local function drawPCChrome(game)
-  Font.drawBox(0, 12, UI_TW, 6)
+  syncLayout()
+  local base = isPortrait() and (UI_TH - 6) or 12
+  Font.drawBox(0, base, UI_TW, 6)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(Strings("What?"), 8, 112)
-  Font.drawBox(UI_TW - 11, 14, 11, 4)
+  Font.draw(Strings("What?"), 8, (base + 2) * 8)
+  Font.drawBox(UI_TW - 11, base + 2, 11, 4)
   love.graphics.setColor(0, 0, 0, 1)
-  Font.draw(Strings("BOX No."), (UI_TW - 10) * 8, 128)
+  Font.draw(Strings("BOX No."), (UI_TW - 10) * 8, (base + 4) * 8)
   local n = game.save.currentBox or 1
-  Font.draw(tostring(n), (n >= 10 and UI_TW - 3 or UI_TW - 2) * 8, 128)
+  Font.draw(tostring(n), (n >= 10 and UI_TW - 3 or UI_TW - 2) * 8,
+    (base + 4) * 8)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -340,7 +419,56 @@ local function wrapText(text, cols)
 end
 
 local function installOptionsLayout()
-  OptionRows.VISIBLE = 12
+  local marqueeIndex, marqueeScroll, marqueeStartedAt = nil, nil, 0
+
+  local function glyphSlice(text, first, count)
+    text = tostring(text or "")
+    local spans = Font.split(text)
+    if #spans == 0 or count <= 0 then return "", #spans end
+    first = math.max(1, math.min(first or 1, #spans))
+    local last = math.min(#spans, first + count - 1)
+    return text:sub(spans[first].from, spans[last].to), #spans
+  end
+
+  local function marqueeText(text, cols, active)
+    text = tostring(text or "")
+    cols = math.max(1, cols or 1)
+    local firstWindow, glyphs = glyphSlice(text, 1, cols)
+    if glyphs <= cols then return text end
+    if not active then return firstWindow end
+
+    -- Pause at both ends and move one glyph at a time.  The selected row is
+    -- the only moving row, so a portrait options page remains easy to scan.
+    local overflow = glyphs - cols
+    local holdTicks = 4
+    local tick = math.floor(math.max(0,
+      love.timer.getTime() - marqueeStartedAt) / 0.18)
+    local cycle = overflow * 2 + holdTicks * 2
+    local phase = tick % cycle
+    local offset
+    if phase < holdTicks then
+      offset = 0
+    elseif phase < holdTicks + overflow then
+      offset = phase - holdTicks
+    elseif phase < holdTicks * 2 + overflow then
+      offset = overflow
+    else
+      offset = overflow - (phase - holdTicks * 2 - overflow)
+    end
+    return glyphSlice(text, offset + 1, cols)
+  end
+
+  local function applyOptionProfile()
+    syncLayout()
+    OptionRows.VISIBLE = isPortrait() and 11 or 12
+  end
+
+  applyOptionProfile()
+  local originalClampScroll = OptionRows.clampScroll
+  OptionRows.clampScroll = function(...)
+    applyOptionProfile()
+    return originalClampScroll(...)
+  end
 
 local originalScreensBuild = Screens.build
 
@@ -351,7 +479,7 @@ Screens.push = function(game, id, ...)
       and (inst.screenId:match("Options$") 
 	    or inst.screenId:match("Settings$")) then
     inst.uiSize = function()
-      return UI_W, UI_H
+      return adaptiveUiSize()
     end
     inst.isWideBattleLayout = function()
       return false
@@ -364,7 +492,52 @@ Screens.push = function(game, id, ...)
   return inst
 end
   OptionRows.draw = function(game, rows, index, scroll, bottomLabel, bottomRow)
+    applyOptionProfile()
     drawOuterFrame("OPTIONS")
+    if isPortrait() then
+      if marqueeIndex ~= index or marqueeScroll ~= scroll then
+        marqueeIndex, marqueeScroll = index, scroll
+        marqueeStartedAt = love.timer.getTime()
+      end
+      for slot = 1, OptionRows.VISIBLE do
+        local i = scroll + slot
+        local row = rows[i]
+        if not row then break end
+        local labelY = 24 + (slot - 1) * 16
+        local value = rowText(row, game)
+        if row.id == "ruleset" then
+          local upper = tostring(value):upper()
+          if upper:find("FAITHFUL", 1, true) then
+            value = "FAITHFUL"
+          elseif upper:find("MODERN", 1, true) then
+            value = "MODERN"
+          end
+        end
+        local active = i == index
+        local valueCols = 8
+        local valueNeedsScroll = Font.width(value) > valueCols * 8
+        local shownValue = marqueeText(value, valueCols, active)
+        local valueX = UI_W - 8 - (valueNeedsScroll
+          and valueCols * 8 or Font.width(shownValue))
+        local labelCols = math.max(1, math.floor((valueX - 24) / 8))
+        local label = Strings(row.label)
+        Font.draw(marqueeText(label, labelCols, active), 16, labelY)
+        Font.draw(shownValue, valueX, labelY)
+        if active then Font.drawCode(Theme.cursor, 8, labelY) end
+      end
+      if scroll + OptionRows.VISIBLE < #rows then
+        Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8, (UI_TH - 3) * 8)
+      end
+      if bottomLabel then
+        Font.draw(Strings(truncate(bottomLabel, UI_TW - 5)), 24,
+          (UI_TH - 2) * 8)
+        if bottomRow and index == bottomRow then
+          Font.drawCode(Theme.cursor, 16, (UI_TH - 2) * 8)
+        end
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+      return
+    end
     for slot = 1, OptionRows.VISIBLE do
       local i = scroll + slot
       local row = rows[i]
@@ -419,10 +592,45 @@ end
 
 local function installListLayout()
   makeWideState(ListMenu)
-  QuantityBox.uiSize = function() return UI_W, UI_H end
+  QuantityBox.uiSize = adaptiveUiSize
   QuantityBox.isWideBattleLayout = function() return false end
+  local originalQuantityDraw = QuantityBox.draw
+  QuantityBox.draw = function(self)
+    if not isPortrait() then return originalQuantityDraw(self) end
+    love.graphics.push()
+    love.graphics.translate(0, classicYOffset())
+    local result = { pcall(originalQuantityDraw, self) }
+    love.graphics.pop()
+    if not result[1] then error(result[2]) end
+    return unpack(result, 2)
+  end
   local originalListMenuNew = ListMenu.new
   local originalListMenuUpdate = ListMenu.update
+
+  local function applyListMetrics(list)
+    syncLayout()
+    if list.gen1BetterMenusLandscapeRows == nil then
+      list.gen1BetterMenusLandscapeRows = list.rows
+      list.gen1BetterMenusLandscapeCursorRows = list.cursorRows
+    end
+
+    if isPortrait() then
+      local hasBottomBox = list.dialogue or (list.messageBox and list.footer)
+      list.rows = hasBottomBox and 10 or (list.footer and 11 or 12)
+      list.cursorRows = nil
+    else
+      list.rows = list.gen1BetterMenusLandscapeRows or 7
+      list.cursorRows = list.gen1BetterMenusLandscapeCursorRows
+    end
+
+    local maxRow = list.cursorRows or list.rows
+    if list.index - list.scroll > maxRow then
+      list.scroll = list.index - maxRow
+    elseif list.index - list.scroll < 1 then
+      list.scroll = list.index - 1
+    end
+    list.scroll = math.max(0, list.scroll)
+  end
 
   local function favoriteItems(save)
     save.gen1BetterMenusFavoriteItems =
@@ -434,6 +642,9 @@ local function installListLayout()
     if not list.gen1BetterMenusBagFavorites then return end
     local selected = list.items[list.index]
     local selectedId = selected and selected.value
+    local swapId = list.gen1BetterMenusSwapItemId
+      or (list.swapIndex and list.items[list.swapIndex]
+          and list.items[list.swapIndex].value)
     local rank = {}
     for i, id in ipairs(Bag.order(list.game.save)) do rank[id] = i end
     local favorites = favoriteItems(list.game.save)
@@ -447,12 +658,43 @@ local function installListLayout()
         if item.value == selectedId then list.index = i break end
       end
     end
+    if swapId then
+      for i, item in ipairs(list.items) do
+        if item.value == swapId then list.swapIndex = i break end
+      end
+    end
     local maxRow = list.cursorRows or list.rows
     if list.index - list.scroll > maxRow then
       list.scroll = list.index - maxRow
     elseif list.index - list.scroll < 1 then
       list.scroll = list.index - 1
     end
+  end
+
+  local function completeBagSwap(list, item)
+    local fromId = list.gen1BetterMenusSwapItemId
+      or (list.swapIndex and list.items[list.swapIndex]
+          and list.items[list.swapIndex].value)
+    local toId = item and item.value
+    if not (fromId and toId) then
+      list.swapIndex = nil
+      list.gen1BetterMenusSwapItemId = nil
+      return
+    end
+
+    local order = Bag.order(list.game.save)
+    local fromIndex, toIndex
+    for i, id in ipairs(order) do
+      if id == fromId then fromIndex = i end
+      if id == toId then toIndex = i end
+    end
+    if fromIndex and toIndex then
+      order[fromIndex], order[toIndex] = order[toIndex], order[fromIndex]
+      require("src.core.Sound").play(list.game.data, "Swap")
+    end
+    list.swapIndex = nil
+    list.gen1BetterMenusSwapItemId = nil
+    sortBagFavorites(list)
   end
 
   local function drawFavoriteHeart(x, y)
@@ -479,9 +721,28 @@ ListMenu.new = function(game, ...)
     self.cursorRows = nil
   end
 
+  self.gen1BetterMenusLandscapeRows = self.rows
+  self.gen1BetterMenusLandscapeCursorRows = self.cursorRows
+  applyListMetrics(self)
+
   if bagItems then
     self.gen1BetterMenusBagFavorites = true
+    local originalBagChoose = self.onChoose
+    self.onSelectKey = function(item, list)
+      if not item then return end
+      if not list.swapIndex then
+        list.swapIndex = list.index
+        list.gen1BetterMenusSwapItemId = item.value
+        return
+      end
+      completeBagSwap(list, item)
+    end
+    self.onChoose = function(item, ...)
+      if self.swapIndex then return completeBagSwap(self, item) end
+      return originalBagChoose(item, ...)
+    end
     self.update = function(list, dt)
+      applyListMetrics(list)
       if list.game.input:wasPressed("start") then
         local item = list.items[list.index]
         if not item then return end
@@ -503,16 +764,22 @@ ListMenu.new = function(game, ...)
 
   return self
 end
+  ListMenu.update = function(self, dt)
+    applyListMetrics(self)
+    return originalListMenuUpdate(self, dt)
+  end
   ListMenu.sgbPalettes = wholeWide
   -- PokedexMenu stamps its own palette function onto the ListMenu instance,
   -- so update that factory-owned function as well as the generic class.
   PokedexMenu.sgbPalettes = wholeWide
 
   ListMenu.draw = function(self)
+    applyListMetrics(self)
     sortBagFavorites(self)
     drawOuterFrame(self.title)
     if #self.items == 0 then
-      Font.draw(Strings("Nothing here."), 24, 64)
+      Font.draw(Strings("Nothing here."), 24,
+        isPortrait() and math.floor(UI_H / 2) or 64)
     end
     for row = 1, self.rows do
       local i = self.scroll + row
@@ -520,13 +787,17 @@ end
       if not item then break end
       local y = 8 + row * 16
       local labelX = 24
+      local label = item.label
+      if isPortrait() then
+        label = truncate(label, item.right and (UI_TW - 8) or (UI_TW - 5))
+      end
       if self.gen1BetterMenusBagFavorites
           and favoriteItems(self.game.save)[item.value] then
-        drawFavoriteHeart(labelX + Font.width(item.label) + 4, y)
+        drawFavoriteHeart(labelX + Font.width(label) + 4, y)
       end
-      Font.draw(item.label, labelX, y)
+      Font.draw(label, labelX, y)
       if item.ball then
-        local bx, by = labelX + Font.width(item.label) + 11, y + 3
+        local bx, by = labelX + Font.width(label) + 11, y + 3
         love.graphics.circle("fill", bx, by, 3.5)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", bx - 3.5, by - 0.5, 7, 1)
@@ -546,19 +817,21 @@ end
     end
 
     if self.dialogue then
-      Font.drawBox(27, 0, 11, 3)
+      Font.drawBox(UI_TW - 11, 0, 11, 3)
       local money = ("¥%d"):format(self.money and self.money() or 0)
       Font.draw(money, UI_W - 8 - Font.width(money), 8)
     end
 
     if self.dialogue or (self.messageBox and self.footer) then
-      Font.drawBox(0, 13, UI_TW, 5)
+      local footerTop = isPortrait() and (UI_TH - 5) or 13
+      Font.drawBox(0, footerTop, UI_TW, 5)
       if self.footer then
         local flat = {}
-        for _, page in ipairs(TextBox.paginate(self.footer, 36)) do
+        local cols = isPortrait() and (UI_TW - 2) or 36
+        for _, page in ipairs(TextBox.paginate(self.footer, cols)) do
           for _, line in ipairs(page) do flat[#flat + 1] = line end
         end
-        local y = 112
+        local y = isPortrait() and ((footerTop + 1) * 8) or 112
         for i = math.max(1, #flat - 1), #flat do
           Font.draw(flat[i], 8, y)
           y = y + 16
@@ -566,10 +839,16 @@ end
       end
     elseif self.footer then
       local flat = {}
-      for _, page in ipairs(TextBox.paginate(self.footer, 36)) do
+      local cols = isPortrait() and (UI_TW - 4) or 36
+      for _, page in ipairs(TextBox.paginate(self.footer, cols)) do
         for _, line in ipairs(page) do flat[#flat + 1] = line end
       end
-      local y = (#flat >= 2) and 120 or 128
+      local y
+      if isPortrait() then
+        y = (#flat >= 2) and (UI_H - 24) or (UI_H - 16)
+      else
+        y = (#flat >= 2) and 120 or 128
+      end
       for i = math.max(1, #flat - 1), #flat do
         Font.draw(flat[i], 16, y)
         y = y + 8
@@ -586,6 +865,48 @@ local function installMenuLayout()
   local originalTitleNew = TitleState.new
   local originalTitleDraw = TitleState.draw
   local originalTitlePalettes = TitleState.sgbPalettes
+
+  local function reflowMenu(menu)
+    syncLayout()
+    local tx = menu.gen1BetterMenusBaseTx or menu.tx or 0
+    local ty = menu.gen1BetterMenusBaseTy or menu.ty or 0
+    local tw = menu.gen1BetterMenusBaseTw or menu.tw or 10
+    local th = menu.gen1BetterMenusBaseTh or menu.th or 4
+
+    if menu.enhancedTitleMenu then
+      tw = TITLE_PANEL_TW
+      tx, ty = centeredTitlePanel(th)
+    elseif menu.gen1BetterMenusCenterPC or menu.gen1BetterMenusFullPC then
+      tw, tx = UI_TW, 0
+      if menu.gen1BetterMenusCenterPC and isPortrait() then
+        ty = math.floor((UI_TH - th) / 2)
+      end
+    elseif menu.gen1BetterMenusStartCloses then
+      if isPortrait() then
+        tx, ty, tw, th = 0, 0, UI_TW, UI_TH
+        menu.itemY = 2
+        menu.anchor = nil
+      else
+        tw = math.min(tw, UI_TW)
+        tx, ty = UI_TW - tw, 0
+        menu.itemY = menu.gen1BetterMenusBaseItemY
+        menu.anchor = menu.gen1BetterMenusBaseAnchor
+      end
+    elseif menu.gen1BetterMenusRightPanel then
+      tw = math.min(tw, UI_TW)
+      tx = UI_TW - tw
+      if isPortrait() then ty = UI_TH - th end
+    elseif menu.gen1BetterMenusNamingMenu and isPortrait() then
+      tw = math.min(tw, UI_TW)
+      tx = math.floor((UI_TW - tw) / 2)
+      ty = ty + math.floor((UI_TH - 18) / 2)
+    end
+
+    menu.tx = math.max(0, math.min(tx, UI_TW - math.min(tw, UI_TW)))
+    menu.ty = math.max(0, math.min(ty, UI_TH - math.min(th, UI_TH)))
+    menu.tw = math.min(tw, UI_TW)
+    menu.th = math.min(th, UI_TH)
+  end
 
   local function colorizeYellowPikachu(game, source)
     local logo = PaletteFX.effectiveColors(YELLOW_TITLE_LOGO)
@@ -618,10 +939,13 @@ local function installMenuLayout()
     local tx, ty = centeredTitlePanel(th)
     info.titleUiBox = { tx, ty, tx + tw - 1, ty + th - 1 }
     info.enhancedTitleInfo = true
-    info.uiSize = function() return UI_W, UI_H end
+    info.uiSize = adaptiveUiSize
     info.isWideBattleLayout = function() return false end
     info.isOpaque = false
     info.draw = function(self)
+      syncLayout()
+      tx, ty = centeredTitlePanel(th)
+      self.titleUiBox = { tx, ty, tx + tw - 1, ty + th - 1 }
       local save = self.save
       local inner = tw - 2
       local badges = require("src.inventory.Badges").count(self.game.data, save)
@@ -648,6 +972,7 @@ local function installMenuLayout()
   end
 
   Menu.new = function(game, items, opts)
+    syncLayout()
     opts = opts or {}
     local parent = game and game.stack and game.stack:top()
     local pcMenu = opts.noSound or (parent and parent.gen1BetterMenusPC)
@@ -672,15 +997,23 @@ local function installMenuLayout()
       opts.anchor = "topright"
     end
     local self = originalNew(game, items, opts)
+	self.gen1BetterMenusBaseTx = self.tx
+	self.gen1BetterMenusBaseTy = self.ty
+	self.gen1BetterMenusBaseTw = self.tw
+	self.gen1BetterMenusBaseTh = self.th
+	self.gen1BetterMenusBaseItemY = self.itemY
+	self.gen1BetterMenusBaseAnchor = self.anchor
+	self.gen1BetterMenusStartCloses = opts.startCloses == true
 	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
-  self.tx = self.tx + (UI_TW - 20)
+  self.gen1BetterMenusRightPanel = true
   self.isWideBattleLayout = function() return false end
   local drawMenu = self.draw
   self.isOpaque = false
   self.sgbPalettes = wholeWide
   self.draw = function(menu)
+    reflowMenu(menu)
     parent:draw()
     drawMenu(menu)
   end
@@ -691,20 +1024,29 @@ end
       self.isWideBattleLayout = function() return false end
       if not centerPCMenu and not self.anchor
           and not (parent and getmetatable(parent) == ListMenu) then
-        self.tx = self.tx + (UI_TW - 20)
+        self.gen1BetterMenusRightPanel = true
       end
     end
+    if parent and getmetatable(parent) == NamingScreen then
+      self.gen1BetterMenusNamingMenu = true
+    end
     self.enhancedTitleMenu = titleMenu
+    reflowMenu(self)
     return self
   end
 
   local originalBoxMenuNew = BoxMenu.new
   BoxMenu.new = function(game)
     local self = originalBoxMenuNew(game)
-    self.tx, self.tw = 0, UI_TW
+    self.gen1BetterMenusBaseTx = self.tx
+    self.gen1BetterMenusBaseTy = self.ty
+    self.gen1BetterMenusBaseTw = self.tw
+    self.gen1BetterMenusBaseTh = self.th
+    self.gen1BetterMenusFullPC = true
     self.gen1BetterMenusPC = true
     self.gen1BetterMenusPCChrome = true
     self.draw = function(menu)
+      reflowMenu(menu)
       if pcOverlayAbove(menu) then return end
       Menu.draw(menu)
       drawPCChrome(game)
@@ -715,18 +1057,25 @@ end
   local originalPlayerPCNew = PlayerPC.new
   PlayerPC.new = function(game, opts)
     local self = originalPlayerPCNew(game, opts)
-    self.tx, self.tw = 0, UI_TW
+    self.gen1BetterMenusBaseTx = self.tx
+    self.gen1BetterMenusBaseTy = self.ty
+    self.gen1BetterMenusBaseTw = self.tw
+    self.gen1BetterMenusBaseTh = self.th
+    self.gen1BetterMenusFullPC = true
     self.gen1BetterMenusPC = true
+    reflowMenu(self)
     return self
   end
 
   Menu.update = function(self, dt)
+    reflowMenu(self)
     local titleMenu = self.enhancedTitleMenu
     originalUpdate(self, dt)
     if titleMenu then patchContinueInfo(self) end
   end
 
   TitleState.openMenu = function(self)
+    syncLayout()
     originalOpenMenu(self)
     local menu = self.game.stack:top()
     if getmetatable(menu) == Menu and menu.enhancedTitleMenu then
@@ -751,6 +1100,7 @@ end
   end
 
   TitleState.draw = function(self)
+    syncLayout()
     local top = self.game and self.game.stack and self.game.stack:top()
     local titleOptions = top and getmetatable(top) == OptionsMenu
     local currentSprite
@@ -780,6 +1130,7 @@ end
   end
 
   TitleState.sgbPalettes = function(self, game)
+    syncLayout()
     local top = game and game.stack and game.stack:top()
     if top and top.titleUiBox
        and (top.enhancedTitleMenu or top.enhancedTitleInfo) then
@@ -798,8 +1149,9 @@ end
     return result
   end
 
-  Menu.uiSize = function() return UI_W, UI_H end
+  Menu.uiSize = adaptiveUiSize
 Menu.isWideBattleLayout = function(self)
+  if isPortrait() then return false end
   local states = self.game and self.game.stack and self.game.stack.states
     or {}
 	for i = 1, #states - 1 do
@@ -818,6 +1170,7 @@ end
   Menu.isOpaque = false
   local originalMenuDraw = Menu.draw
   Menu.draw = function(self)
+  reflowMenu(self)
   if self.gen1BetterMenusPC and pcOverlayAbove(self) then
     return
   end
@@ -827,6 +1180,11 @@ end
     if states[i] == self and getmetatable(states[i + 1]) == ListMenu then
       return
     end
+  end
+
+  if isPortrait() and not self.gen1BetterMenusRightPanel then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
   end
 
   return originalMenuDraw(self)
@@ -924,14 +1282,49 @@ end
 
 local function installDialogueLayout()
   local originalNew = TextBox.new
+  local originalTextBoxUpdate = TextBox.update
+  local originalTextBoxDraw = TextBox.draw
+
+  local function applyTextBoxLayout(box, rebuild)
+    syncLayout()
+    local profile = isPortrait() and "portrait" or "landscape"
+    box.boxTx, box.boxTy, box.boxTw, box.boxTh = 0, UI_TH - 5, UI_TW, 5
+    box.maxCols = UI_TW - 2
+    box.textX = 8
+    box.line1Y, box.line2Y = (UI_TH - 4) * 8, (UI_TH - 2) * 8
+
+    if not rebuild and box.gen1BetterMenusLayoutProfile == profile then return end
+    box.gen1BetterMenusLayoutProfile = profile
+    if not box.gen1BetterMenusText then return end
+
+    local pageIndex = math.max(1, box.pageIndex or 1)
+    local finished = box.instant or box.done
+    box.pages = TextBox.paginate(box.gen1BetterMenusText, box.maxCols)
+    box.pageIndex = math.min(pageIndex, math.max(1, #box.pages))
+    local page = box.pages[box.pageIndex] or {}
+    box.shown = {}
+    if finished then
+      for index = math.max(1, #page - 1), #page do
+        box.shown[#box.shown + 1] = Font.encode(page[index])
+      end
+      box.lineIndex = #page
+      box.codes = box.shown[#box.shown] or {}
+      box.charIndex = #box.codes
+    else
+      box.lineIndex, box.charIndex = 1, 0
+      box:beginLine()
+    end
+  end
+
   local function widenSavePanel(game, parent)
     if parent and parent.holdsUIAnchors and parent.openPrompt
         and parent.delay ~= nil and not parent.gen1BetterMenusSavePanel then
       parent.gen1BetterMenusSavePanel = true
-      parent.uiSize = function() return UI_W, UI_H end
+      parent.uiSize = adaptiveUiSize
       parent.isWideBattleLayout = function() return false end
       parent.sgbPalettes = wholeWide
       parent.draw = function()
+        syncLayout()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
         local save = game.save
@@ -969,37 +1362,41 @@ local function installDialogueLayout()
   end
 
   TextBox.new = function(game, text, onDone, opts)
+    syncLayout()
     local self = originalNew(game, text, onDone, opts)
     local parent = game and game.stack and game.stack:top()
     widenSavePanel(game, parent)
     local inWideBattle, wideBattleState = false, nil
     for _, state in ipairs(game and game.stack and game.stack.states or {}) do
-      if state and state.isBattle and state.uiSize then
-        local w = state:uiSize()
-        if w and w > Renderer.WIDTH then
-          inWideBattle, wideBattleState = true, state
-          break
+      if state and state.isBattle then
+        wideBattleState = state
+        if state.uiSize then
+          local w = state:uiSize()
+          if w and w > Renderer.WIDTH then inWideBattle = true end
         end
+        break
       end
     end
     if parent and parent.uiSize then
       local w, h = parent:uiSize()
-      if w and w > Renderer.WIDTH then
-        self.uiSize = function() return w, h end
-        self.isWideBattleLayout = function() return inWideBattle end
+      if w and h and (w ~= Renderer.WIDTH or h ~= Renderer.HEIGHT) then
+        self.uiSize = function() return parent:uiSize() end
+        self.isWideBattleLayout = function()
+          return not isPortrait() and inWideBattle
+        end
         self.holdsUIAnchors = true
       end
     end
-    self.boxTx, self.boxTy, self.boxTw, self.boxTh = 0, 13, UI_TW, 5
-    self.maxCols = 36
-    self.textX, self.line1Y, self.line2Y = 8, 112, 128
+    self.gen1BetterMenusText = TextBox.substitute(game, text)
+    applyTextBoxLayout(self, true)
     if parent and getmetatable(parent) == OakSpeech then
       -- The dialogue is 304px wide, but OakSpeech still draws its original
       -- 160px scene. Let the engine center that classic scene and its palette
       -- masks inside the wide canvas.
-      self.isWideBattleLayout = function() return true end
+      self.isWideBattleLayout = function() return not isPortrait() end
     end
-    if inWideBattle and tostring(text):lower():find("nickname", 1, true)
+    if (inWideBattle or isPortrait())
+        and tostring(text):lower():find("nickname", 1, true)
         and wideBattleState and wideBattleState.enemy
         and wideBattleState.enemy.sprite then
       local originalDraw = self.draw
@@ -1018,6 +1415,7 @@ local function installDialogueLayout()
       end
       wideBattleState.holdsUIAnchors = false
       self.draw = function(box)
+        applyTextBoxLayout(box)
         local sprite = wideBattleState.enemy.sprite
         local sw, sh = sprite:getDimensions()
         local sx, sy = math.floor((UI_W - sw) / 2), 24
@@ -1030,7 +1428,7 @@ local function installDialogueLayout()
     end
     -- Reflow after widening and rebuild the typewriter's current line so it
     -- cannot retain the original 18-column first-page split.
-    self.pages = TextBox.paginate(TextBox.substitute(game, text), self.maxCols)
+    self.pages = TextBox.paginate(self.gen1BetterMenusText, self.maxCols)
     if self.instant then
       self.pageIndex = #self.pages
       local page = self.pages[self.pageIndex] or {}
@@ -1049,39 +1447,164 @@ local function installDialogueLayout()
     return self
   end
   makeWideState(TextBox)
+  TextBox.update = function(self, dt)
+    applyTextBoxLayout(self)
+    return originalTextBoxUpdate(self, dt)
+  end
+  TextBox.draw = function(self)
+    applyTextBoxLayout(self)
+    return originalTextBoxDraw(self)
+  end
 
   local choiceNew = ChoiceBox.new
+  local originalChoiceDraw = ChoiceBox.draw
+  local function applyChoiceLayout(choice)
+    syncLayout()
+    local baseTw = choice.gen1BetterMenusBaseTw or choice.tw
+    local baseTh = choice.gen1BetterMenusBaseTh or choice.th
+    choice.tw, choice.th = math.min(baseTw, UI_TW), math.min(baseTh, UI_TH)
+    choice.tx = UI_TW - choice.tw
+    if isPortrait() and choice.gen1BetterMenusBottomPrompt then
+      choice.ty = math.max(0, UI_TH - 5 - choice.th - 1)
+    else
+      choice.ty = math.max(0, math.min(
+        choice.gen1BetterMenusBaseTy or choice.ty, UI_TH - choice.th))
+    end
+  end
   ChoiceBox.new = function(game, onChoose, opts)
+    syncLayout()
     local self = choiceNew(game, onChoose, opts)
-    self.tx = UI_TW - self.tw
+    local parent = game and game.stack and game.stack:top()
+    self.gen1BetterMenusBaseTy = self.ty
+    self.gen1BetterMenusBaseTw = self.tw
+    self.gen1BetterMenusBaseTh = self.th
+    self.gen1BetterMenusBottomPrompt = parent and parent.isTextBox or false
+    applyChoiceLayout(self)
     return self
   end
   makeWideState(ChoiceBox)
+  ChoiceBox.draw = function(self)
+    applyChoiceLayout(self)
+    return originalChoiceDraw(self)
+  end
 end
 
 local function installSupportingScreens()
+  local originalBattleWideLayout = BattleState.isWideBattleLayout
+  BattleState.isWideBattleLayout = function(self)
+    if isPortrait() then return false end
+    return originalBattleWideLayout(self)
+  end
+
   -- The classic trainer card is a panel over the field. Keeping the world in
   -- the visible stack replaces its black outer frame with the overworld.
+  local originalTrainerDraw = TrainerCard.draw
+  local originalTrainerPalettes = TrainerCard.sgbPalettes
   TrainerCard.isOpaque = false
+  TrainerCard.uiSize = function()
+    if isPortrait() then return PORTRAIT_PROFILE.w, PORTRAIT_PROFILE.h end
+    return Renderer.WIDTH, Renderer.HEIGHT
+  end
+  TrainerCard.draw = function(self)
+    if not isPortrait() then return originalTrainerDraw(self) end
+    syncLayout()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+    return drawClassicInPortrait(function() return originalTrainerDraw(self) end)
+  end
+  TrainerCard.sgbPalettes = function(self, game)
+    local original = originalTrainerPalettes(self, game) or {}
+    if not isPortrait() then return original end
+    syncLayout()
+    local palette = original[1] and original[1].colors or colors()
+    local zones = { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
+    for _, zone in ipairs(shiftZones(original, 0, classicYOffset())) do
+      zones[#zones + 1] = zone
+    end
+    return zones
+  end
+
+  local originalDexEntryDraw = DexEntryMenu.draw
+  local originalDexEntryPalettes = DexEntryMenu.sgbPalettes
+  DexEntryMenu.uiSize = function()
+    if isPortrait() then return PORTRAIT_PROFILE.w, PORTRAIT_PROFILE.h end
+    return Renderer.WIDTH, Renderer.HEIGHT
+  end
+  DexEntryMenu.draw = function(self)
+    if not isPortrait() then return originalDexEntryDraw(self) end
+    syncLayout()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+    return drawClassicInPortrait(function() return originalDexEntryDraw(self) end)
+  end
+  if originalDexEntryPalettes then
+    DexEntryMenu.sgbPalettes = function(self, game)
+      local original = originalDexEntryPalettes(self, game) or {}
+      if not isPortrait() then return original end
+      syncLayout()
+      local palette = original[1] and original[1].colors or colors()
+      local zones = { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
+      for _, zone in ipairs(shiftZones(original, 0, classicYOffset())) do
+        zones[#zones + 1] = zone
+      end
+      return zones
+    end
+  end
+
+  local originalOakDraw = OakSpeech.draw
+  local originalOakPalettes = OakSpeech.sgbPalettes
+  OakSpeech.uiSize = function()
+    if isPortrait() then return PORTRAIT_PROFILE.w, PORTRAIT_PROFILE.h end
+    return Renderer.WIDTH, Renderer.HEIGHT
+  end
+  OakSpeech.draw = function(self)
+    if not isPortrait() then return originalOakDraw(self) end
+    syncLayout()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+    return drawClassicInPortrait(function() return originalOakDraw(self) end)
+  end
+  OakSpeech.sgbPalettes = function(self, game)
+    local original = originalOakPalettes(self, game) or {}
+    if not isPortrait() then return original end
+    syncLayout()
+    local palette = original[1] and original[1].colors or colors()
+    local zones = { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
+    for _, zone in ipairs(shiftZones(original, 0, classicYOffset())) do
+      zones[#zones + 1] = zone
+    end
+    return zones
+  end
 
   local originalNamingNew = NamingScreen.new
+  local originalNamingPalettes = NamingScreen.sgbPalettes
   NamingScreen.new = function(game, opts)
     local self = originalNamingNew(game, opts)
-    local wideBattle, introNaming = false, false
+    local battleState, introNaming = nil, false
     local introAnchors = {}
     for _, state in ipairs(game and game.stack and game.stack.states or {}) do
       if getmetatable(state) == OakSpeech then introNaming = true end
-      if state and state.isBattle and state.uiSize then
-        local w = state:uiSize()
-        if w and w > Renderer.WIDTH then wideBattle = true break end
-      end
+      if state and state.isBattle then battleState = state end
     end
-    if wideBattle then
+    if battleState then
       local originalDraw = self.draw
       self.gen1BetterMenusSolidNickname = true
-      self.uiSize = function() return UI_W, UI_H end
-      self.isWideBattleLayout = function() return true end
+      self.uiSize = function()
+        if isPortrait() then return PORTRAIT_PROFILE.w, PORTRAIT_PROFILE.h end
+        if originalBattleWideLayout(battleState) then
+          return LANDSCAPE_PROFILE.w, LANDSCAPE_PROFILE.h
+        end
+        return Renderer.WIDTH, Renderer.HEIGHT
+      end
+      self.isWideBattleLayout = function()
+        return not isPortrait() and originalBattleWideLayout(battleState)
+      end
       self.sgbPalettes = function(_, currentGame)
+        if not isPortrait() and not originalBattleWideLayout(battleState)
+            and originalNamingPalettes then
+          return originalNamingPalettes(self, currentGame)
+        end
+        syncLayout()
         local base = colors()
         local palette = { base[1], base[2], base[3], base[4] }
         local r, g, b = PaletteFX.paperShade(currentGame.data)
@@ -1092,12 +1615,20 @@ local function installSupportingScreens()
         return { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
       end
       self.draw = function(screen)
+        syncLayout()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
-        love.graphics.push()
-        love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
-        originalDraw(screen)
-        love.graphics.pop()
+        if isPortrait() then
+          return drawClassicInPortrait(function() return originalDraw(screen) end)
+        elseif originalBattleWideLayout(battleState) then
+          love.graphics.push()
+          love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
+          local result = { pcall(originalDraw, screen) }
+          love.graphics.pop()
+          if not result[1] then error(result[2]) end
+          return unpack(result, 2)
+        end
+        return originalDraw(screen)
       end
     elseif introNaming then
       -- Oak's held dialogue remains below this screen and would otherwise
@@ -1126,8 +1657,8 @@ local function installSupportingScreens()
       local originalDraw = self.draw
       self.gen1BetterMenusIntroNaming = true
       self.isOpaque = true
-      self.uiSize = function() return UI_W, UI_H end
-      self.isWideBattleLayout = function() return true end
+      self.uiSize = adaptiveUiSize
+      self.isWideBattleLayout = function() return not isPortrait() end
       self.letterboxWhite = true
       self.sgbPalettes = wholeWide
       local originalEnter = self.enter
@@ -1139,8 +1670,12 @@ local function installSupportingScreens()
         screen.isOpaque = true
       end
       self.draw = function(screen)
+        syncLayout()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+        if isPortrait() then
+          return drawClassicInPortrait(function() return originalDraw(screen) end)
+        end
         love.graphics.push()
         love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
         originalDraw(screen)
@@ -1151,6 +1686,10 @@ local function installSupportingScreens()
   end
 
   local function partySlot(i)
+    syncLayout()
+    if isPortrait() then
+      return 8, 8 + (i - 1) * 28
+    end
     local col = math.floor((i - 1) / 3)
     local row = (i - 1) % 3
     return 8 + col * 144, 8 + row * 40
@@ -1178,6 +1717,7 @@ local function installSupportingScreens()
     return zones
   end
   PartyMenu.draw = function(self)
+    syncLayout()
     drawOuterFrame()
     local party = self.party or self.game.save.party
     local HudTiles = require("src.render.HudTiles")
@@ -1238,10 +1778,16 @@ local function installSupportingScreens()
 
     love.graphics.setColor(0, 0, 0, 1)
     local flat = {}
-    for _, page in ipairs(TextBox.paginate(self:bottomMessage(), 34)) do
+    local messageCols = isPortrait() and (UI_TW - 4) or 34
+    for _, page in ipairs(TextBox.paginate(self:bottomMessage(), messageCols)) do
       for _, line in ipairs(page) do flat[#flat + 1] = line end
     end
-    local y = #flat > 1 and 112 or 128
+    local y
+    if isPortrait() then
+      y = #flat > 1 and (UI_H - 40) or (UI_H - 24)
+    else
+      y = #flat > 1 and 112 or 128
+    end
     for i = math.max(1, #flat - 1), #flat do
       Font.draw(flat[i], 16, y)
       y = y + 16
@@ -1250,8 +1796,8 @@ local function installSupportingScreens()
     if self.submenu then
       local n = #self.subItems
       local tx = UI_TW - 11
-      Font.drawBox(tx, 17 - n * 2 - 1, 11, n * 2 + 1)
-      local y0 = (17 - n * 2) * 8
+      Font.drawBox(tx, UI_TH - n * 2 - 2, 11, n * 2 + 1)
+      local y0 = (UI_TH - n * 2 - 1) * 8
       for si, entry in ipairs(self.subItems) do
         Font.draw(entry.label, (tx + 2) * 8, y0 + (si - 1) * 16)
       end
@@ -1273,8 +1819,8 @@ local function installSupportingScreens()
     local parent = game and game.stack and game.stack:top()
     if parent and parent.uiSize then
       local w, h = parent:uiSize()
-      if w and w > Renderer.WIDTH then
-        self.uiSize = function() return w, h end
+      if w and h and (w ~= Renderer.WIDTH or h ~= Renderer.HEIGHT) then
+        self.uiSize = function() return parent:uiSize() end
         self.isWideBattleLayout = function() return false end
         self.gen1BetterMenusWide = true
       end
@@ -1285,8 +1831,13 @@ local function installSupportingScreens()
 
   StatBox.draw = function(self)
     if self.gen1BetterMenusWide then
+      syncLayout()
       love.graphics.push()
-      love.graphics.translate(UI_W - Renderer.WIDTH, 0)
+      if isPortrait() then
+        love.graphics.translate(0, classicYOffset())
+      else
+        love.graphics.translate(UI_W - Renderer.WIDTH, 0)
+      end
       originalStatBoxDraw(self)
       love.graphics.pop()
       return
@@ -1294,8 +1845,17 @@ local function installSupportingScreens()
 
     originalStatBoxDraw(self)
   end
+  local originalSummaryDraw = SummaryMenu.draw
   makeWideState(SummaryMenu)
   SummaryMenu.sgbPalettes = wholeWide
+  SummaryMenu.draw = function(self)
+    if isPortrait() then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+      return drawClassicInPortrait(function() return originalSummaryDraw(self) end)
+    end
+    return originalSummaryDraw(self)
+  end
 end
 
 local function installManagerLayout()
@@ -1307,16 +1867,20 @@ local function installManagerLayout()
   end
 
   ManagerState.drawRows = function(self, rows)
-    local listTop, listRows = 3, 11
+    syncLayout()
+    local listTop = 3
+    local listRows = isPortrait() and (UI_TH - 7) or 11
+    local headerCols = isPortrait() and (UI_TW - 4) or 34
+    local rowCols = isPortrait() and (UI_TW - 6) or 32
     local last = math.min(#rows, self.scroll + listRows - 1)
     local y = listTop
     for i = self.scroll, last do
       local row = rows[i]
       if row.header then
-        drawCut(row.label, 16, y * 8, 34)
+        drawCut(row.label, 16, y * 8, headerCols)
       else
         if row.glyph and row.glyph ~= " " then Font.draw(row.glyph, 16, y * 8) end
-        drawCut(row.label, 32, y * 8, 32)
+        drawCut(row.label, 32, y * 8, rowCols)
         if i == self.cursor then Font.drawCode(Theme.cursor, 8, y * 8) end
       end
       y = y + 1
@@ -1328,22 +1892,28 @@ local function installManagerLayout()
   end
 
   ManagerState.drawFooter = function(self, line1, line2)
+    syncLayout()
+    local cols = isPortrait() and (UI_TW - 4) or 34
+    local lastRow, previousRow = UI_TH - 2, UI_TH - 3
     if self.notice then
-      drawCut(self.notice, 16, 16 * 8, 34)
+      drawCut(self.notice, 16, lastRow * 8, cols)
       return
     end
     if line2 then
-      if line1 then drawCut(line1, 16, 15 * 8, 34) end
-      drawCut(line2, 16, 16 * 8, 34)
+      if line1 then drawCut(line1, 16, previousRow * 8, cols) end
+      drawCut(line2, 16, lastRow * 8, cols)
     elseif line1 then
-      drawCut(line1, 16, 16 * 8, 34)
+      drawCut(line1, 16, lastRow * 8, cols)
     end
   end
 
   ManagerState.drawDetail = function(self)
+    syncLayout()
     local m = self.currentMod
     if not m then return end
-    drawCut((m.name or m.id) .. " " .. (m.version or ""), 16, 2 * 8, 34)
+    local cols = isPortrait() and (UI_TW - 4) or 34
+    local rowCols = isPortrait() and (UI_TW - 6) or 32
+    drawCut((m.name or m.id) .. " " .. (m.version or ""), 16, 2 * 8, cols)
     local status = m.enabled and "ENABLED" or "DISABLED"
     if m.state == "wrong_generation" or not self:runsHere(m) then
       status = status .. " (NOT THIS GAME)"
@@ -1353,46 +1923,53 @@ local function installManagerLayout()
       status = status .. " !"
     end
     if self:isStaged(m) then status = status .. " (STAGED)" end
-    drawCut(status, 16, 3 * 8, 34)
+    drawCut(status, 16, 3 * 8, cols)
     drawCut((m.category or "OTHER") .. " / " .. (m.profile or "content"),
-            16, 4 * 8, 34)
+            16, 4 * 8, cols)
     local lines = wrapText(m.error and ("FAILED: " .. m.error)
-      or (m.note and ("SKIPPED: " .. m.note)) or m.description, 34)
-    for i = 1, 5 do
+      or (m.note and ("SKIPPED: " .. m.note)) or m.description, cols)
+    local descVisible = isPortrait() and 8 or 5
+    for i = 1, descVisible do
       local line = lines[self.descScroll + i - 1]
       if not line then break end
       Font.draw(line, 16, (5 + i) * 8)
     end
-    if self.descScroll + 5 <= #lines then
-      Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8, 10 * 8)
+    if self.descScroll + descVisible <= #lines then
+      Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8,
+        (5 + descVisible) * 8)
     end
     local rows = self:rowsForScreen()
-    local visible = 5
+    local actionTop = isPortrait() and 15 or 10
+    local visible = isPortrait() and math.max(1, UI_TH - actionTop - 3) or 5
     local first = math.max(1, self.cursor - visible + 1)
     first = math.min(first, math.max(1, #rows - visible + 1))
     for slot = 1, visible do
       local i = first + slot - 1
       local row = rows[i]
       if not row then break end
-      drawCut(row.label, 32, (10 + slot) * 8, 32)
+      drawCut(row.label, 32, (actionTop + slot) * 8, rowCols)
       if i == self.cursor then
-        Font.drawCode(Theme.cursor, 24, (10 + slot) * 8)
+        Font.drawCode(Theme.cursor, 24, (actionTop + slot) * 8)
       end
     end
     if first + visible - 1 < #rows then
-      Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8, 15 * 8)
+      Font.drawCode(Theme.moreArrow, (UI_TW - 3) * 8,
+        (actionTop + visible) * 8)
     end
     self:drawFooter("A:CHOOSE B:BACK")
   end
 
   ManagerState.drawApply = function(self)
-    drawCut("PENDING CHANGES", 16, 2 * 8, 34)
+    syncLayout()
+    local cols = isPortrait() and (UI_TW - 4) or 34
+    drawCut("PENDING CHANGES", 16, 2 * 8, cols)
     local staged = self:stagedList()
     local y = 3
-    for i = 1, math.min(#staged, 7) do
+    local stagedVisible = isPortrait() and 14 or 7
+    for i = 1, math.min(#staged, stagedVisible) do
       local m = staged[i]
       drawCut((m.enabled and "ON " or "OFF ") .. (m.name or m.id),
-              16, y * 8, 34)
+              16, y * 8, cols)
       y = y + 1
     end
     if #staged == 0 then
@@ -1400,21 +1977,32 @@ local function installManagerLayout()
                 16, y * 8)
     end
     local rows = self:rowsForScreen()
+    local actionTop = isPortrait() and (UI_TH - #rows - 4) or 11
     for i, row in ipairs(rows) do
-      drawCut(row.label, 32, (11 + i) * 8, 32)
-      if i == self.cursor then Font.drawCode(Theme.cursor, 24, (11 + i) * 8) end
+      drawCut(row.label, 32, (actionTop + i) * 8,
+        isPortrait() and (UI_TW - 6) or 32)
+      if i == self.cursor then
+        Font.drawCode(Theme.cursor, 24, (actionTop + i) * 8)
+      end
     end
     self:drawFooter("A:CHOOSE B:BACK")
   end
 
   ManagerState.drawOverlay = function(self)
+    syncLayout()
     local overlay = self.overlay
     local lines = {}
+    local tw = math.min(30, UI_TW - 2)
+    local wrapCols = math.max(8, tw - 4)
     for _, raw in ipairs(overlay.lines) do
-      for _, line in ipairs(wrapText(raw, 26)) do lines[#lines + 1] = line end
+      for _, line in ipairs(wrapText(raw, wrapCols)) do
+        lines[#lines + 1] = line
+      end
     end
-    local tw = 30
-    local th = math.max(6, #lines + (overlay.kind == "confirm" and 5 or 3))
+    local reserve = overlay.kind == "confirm" and 5 or 3
+    local maxLines = math.max(1, UI_TH - reserve - 2)
+    while #lines > maxLines do table.remove(lines) end
+    local th = math.max(6, #lines + reserve)
     local tx = math.floor((UI_TW - tw) / 2)
     local ty = math.max(1, math.floor((UI_TH - th) / 2))
     Font.drawBox(tx, ty, tw, th)
@@ -1432,11 +2020,13 @@ local function installManagerLayout()
   end
 
   ManagerState.draw = function(self)
+    syncLayout()
     if self.screen == "options" then
       OptionRows.draw(self.game, self.optionRows or {}, self.cursor,
                       self.scroll or 0)
       love.graphics.setColor(0, 0, 0, 1)
-      drawCut(self.notice or Strings("B:DONE (NO RESTART)"), 16, 16 * 8, 34)
+      drawCut(self.notice or Strings("B:DONE (NO RESTART)"), 16,
+        (UI_TH - 2) * 8, isPortrait() and (UI_TW - 4) or 34)
       if self.overlay then self:drawOverlay() end
       love.graphics.setColor(1, 1, 1, 1)
       return
@@ -1463,6 +2053,7 @@ local function installLinkLayout()
   makeWideState(LinkState)
   LinkState.sgbPalettes = wholeWide
   LinkState.draw = function(self)
+    syncLayout()
     drawOuterFrame()
     if self.stage == "menu" then
       local title = Strings("BOIS CLUB LIVE")
@@ -1471,11 +2062,25 @@ local function installLinkLayout()
         Strings("ONLINE MATCH"),
         Strings("TOURNAMENT"),
       }
-      Font.draw(title, (UI_W - Font.width(title)) / 2, 24)
+      local titleY = isPortrait() and 48 or 24
+      Font.draw(title, (UI_W - Font.width(title)) / 2, titleY)
       for i, label in ipairs(entries) do
-        Font.draw(label, 112, 56 + (i - 1) * 16)
+        local x = isPortrait() and math.floor((UI_W - Font.width(label)) / 2)
+          or 112
+        local y = (isPortrait() and 88 or 56) + (i - 1) * 16
+        Font.draw(label, x, y)
       end
-      Font.drawCode(Theme.cursor, 104, 56 + (self.index - 1) * 16)
+      local selected = entries[self.index] or entries[1]
+      local cursorX = isPortrait()
+        and math.floor((UI_W - Font.width(selected)) / 2) - 8 or 104
+      Font.drawCode(Theme.cursor, cursorX,
+        (isPortrait() and 88 or 56) + (self.index - 1) * 16)
+      drawFrameOnly(0, 0, UI_TW, UI_TH)
+      love.graphics.setColor(1, 1, 1, 1)
+      return
+    end
+    if isPortrait() then
+      drawClassicInPortrait(function() return originalDraw(self) end)
       drawFrameOnly(0, 0, UI_TW, UI_TH)
       love.graphics.setColor(1, 1, 1, 1)
       return
@@ -1492,6 +2097,7 @@ end
 
 return function(mod)
   activeMod = mod
+  layoutGame = mod.world and mod.world.game
   local frameGame
   local nicknameBackdrop
 
@@ -1537,6 +2143,34 @@ return function(mod)
   installLinkLayout()
   installReportLayout()
   installLocationBanners(mod)
+
+  -- Touch controls may temporarily need the game higher in a portrait safe
+  -- area. Compute the UPPER placement for that render only; the configured
+  -- SCREEN POS option and its saved value are never changed.
+  local originalScreenLift = ScreenPosition.lift
+  ScreenPosition.lift = function(viewH, contentH, safeTop)
+    local game = frameGame or (mod.world and mod.world.game)
+    local touch = game and game.touchControls
+    local visible = false
+    if touch and type(touch.visible) == "function" then
+      local ok, result = pcall(touch.visible, touch)
+      visible = ok and result == true
+    end
+    if isPortrait() and visible and not ScreenPosition.skinActive() then
+      viewH, contentH = tonumber(viewH) or 0, tonumber(contentH) or 0
+      local slack = viewH - contentH
+      if slack <= 0 then return 0 end
+      local centered = math.floor(slack / 2)
+      local target = math.floor(slack / 4)
+      safeTop = math.floor(tonumber(safeTop) or 0)
+      if safeTop > 0 and target < safeTop then
+        target = math.min(safeTop, centered)
+      end
+      return centered - target
+    end
+    return originalScreenLift(viewH, contentH, safeTop)
+  end
+
   mod.hooks:wrap("render.compose", function(next, renderer, ctx)
     local handled = next(renderer, ctx)
     local solidNickname = false
@@ -1564,6 +2198,7 @@ return function(mod)
   end)
   mod.hooks:wrap("battle.overlay", function(next, battle)
     next(battle)
+    if isPortrait() then return end
     if not (battle and battle.wideLayout and battle:wideLayout()
             and battle.extendedHUD and battle:extendedHUD()) then return end
     local g = love.graphics
@@ -1578,15 +2213,16 @@ return function(mod)
   end)
   mod.hooks:wrap("render.letterbox", function(next, ctx)
     next(ctx)
-    local introNaming = false
+    local solidScreen = false
     for _, state in ipairs(frameGame and frameGame.stack
         and frameGame.stack.states or {}) do
-      if state and state.gen1BetterMenusIntroNaming then
-        introNaming = true
+      if state and (state.gen1BetterMenusIntroNaming
+          or state.gen1BetterMenusSolidNickname) then
+        solidScreen = true
         break
       end
     end
-    if introNaming and ctx and ctx.ww and ctx.wh then
+    if solidScreen and ctx and ctx.ww and ctx.wh then
       local palette = PaletteFX.effectiveColors(colors())
       local paper = palette and palette[1] or { 255, 255, 255 }
       local r, green, b, a = love.graphics.getColor()
@@ -1615,6 +2251,8 @@ return function(mod)
   end)
   mod.hooks:wrap("render.hud", function(next, game, viewport)
     next(game, viewport)
+    syncLayout()
+    if isPortrait() then return end
     local top = game and game.stack and game.stack:top()
     local options = game and game.save and game.save.options
 
@@ -1638,11 +2276,14 @@ return function(mod)
   end)
   mod.hooks:wrap("render.zones", function(next, game, zones)
     frameGame = game
+    layoutGame = game
+    syncLayout()
     local out = next(game, zones) or {}
     local top = game and game.stack and game.stack:top()
     local mt = top and getmetatable(top)
 
-    if mt == BattleState and top.wideLayout and top:wideLayout() then
+    if not isPortrait() and mt == BattleState
+        and top.wideLayout and top:wideLayout() then
       -- Wide battle draws true-colour arena and Pokémon, so recolour only
       -- the three opaque UI panels rather than the completed battle canvas.
       out[#out + 1] = battleUIZone(colors(), 0, 0, 15, 3)
@@ -1652,6 +2293,16 @@ return function(mod)
       out[#out + 1] = battleUIZone(false, 1, 2, 14, 2)
       out[#out + 1] = battleUIZone(false, 24, 9, 36, 9)
     else
+      local portraitSupported = isPortrait() and top and (
+        mt == Menu or mt == ListMenu or mt == OptionsMenu
+        or mt == ManagerState or mt == PartyMenu or mt == SummaryMenu
+        or mt == TrainerCard or mt == DexEntryMenu or mt == LinkState
+        or mt == NamingScreen or mt == ChoiceBox or mt == QuantityBox
+        or top.isTextBox or top.gen1BetterMenusSavePanel)
+      if portraitSupported then
+        table.insert(out, 1,
+          PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1))
+      end
       local title
       local states = game and game.stack and game.stack.states or {}
       for i = 1, #states do
@@ -1672,8 +2323,9 @@ return function(mod)
           out[#out + 1] = PaletteFX.zone(colors(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
           if state.gen1BetterMenusPCChrome then
+            local pcBase = isPortrait() and (UI_TH - 6) or 12
             out[#out + 1] = PaletteFX.zone(
-              colors(), 0, 12, UI_TW - 1, UI_TH - 1)
+              colors(), 0, pcBase, UI_TW - 1, UI_TH - 1)
           end
         elseif state and state.isTextBox then
           out[#out + 1] = PaletteFX.zone(colors(), state.boxTx, state.boxTy,
