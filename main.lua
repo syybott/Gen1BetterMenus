@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.15
+-- Gen1BetterMenus 1.0.16
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -597,9 +597,9 @@ local function installMenuLayout()
     local logo = PaletteFX.effectiveColors(YELLOW_TITLE_LOGO)
     local pika = PaletteFX.effectiveColors(YELLOW_TITLE_PIKACHU)
     if not (logo and pika) then return nil end
-    if type(source) == "table" then source = source.path end
-    source = source or "assets/generated/title/pikachu.png"
-    local path = require("src.render.Assets").resolve(source)
+	if type(source) == "table" then source = source.path end
+	if not source then return nil end
+	local path = require("src.render.Assets").resolve(source)
     local ok, data = pcall(love.image.newImageData, path)
     if not ok or not data then return nil end
     local body, accent, ink = logo[2], pika[3], pika[4]
