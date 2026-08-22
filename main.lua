@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.14
+-- Gen1BetterMenus 1.0.15
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -157,6 +157,18 @@ end
   class.isOpaque = false
 end
 
+local function isOptionRowsScreen(state)
+  if not state or not state.rows then return false end
+
+  local sid = type(state.screenId) == "string"
+    and state.screenId
+    or ""
+
+  return sid:match("Options$")
+      or sid:match("Settings$")
+      or sid == "QualityOfLife"
+end
+
 local function installOverworldScaleStability()
   local originalDraw = Game.draw
   local originalUiScale = Renderer.uiScale
@@ -182,11 +194,7 @@ local dynamicOptionRows =
   and type(top.index) == "number"
   and type(top.scroll) == "number"
 
-if top and (
-    (top.rows and
-      (sid:match("options$") or sid:match("settings$")))
-    or dynamicOptionRows
-  ) then
+if isOptionRowsScreen(top) or dynamicOptionRows then
   top.uiSize = function() return UI_W, UI_H end
   top.isWideBattleLayout = function() return false end
 end
@@ -347,9 +355,7 @@ local originalScreensBuild = Screens.build
 Screens.push = function(game, id, ...)
   local inst = originalScreensBuild(game, id, ...)
 
-  if inst and inst.rows and type(inst.screenId) == "string"
-      and (inst.screenId:match("Options$") 
-	    or inst.screenId:match("Settings$")) then
+if isOptionRowsScreen(inst) then
     inst.uiSize = function()
       return UI_W, UI_H
     end
