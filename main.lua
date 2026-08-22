@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.13
+-- Gen1BetterMenus 1.0.14
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -32,6 +32,7 @@ local QuarantineReport = require("src.ui.QuarantineReport")
 local TitleState = require("src.ui.TitleState")
 local OakSpeech = require("src.ui.OakSpeech")
 local Runtime = require("src.mods.Runtime")
+local Bag = require("src.inventory.Bag")
 
 local UI_W, UI_H = 304, 144
 local UI_TW, UI_TH = UI_W / 8, UI_H / 8
@@ -421,9 +422,51 @@ local function installListLayout()
   QuantityBox.uiSize = function() return UI_W, UI_H end
   QuantityBox.isWideBattleLayout = function() return false end
   local originalListMenuNew = ListMenu.new
+  local originalListMenuUpdate = ListMenu.update
+
+  local function favoriteItems(save)
+    save.gen1BetterMenusFavoriteItems =
+      save.gen1BetterMenusFavoriteItems or {}
+    return save.gen1BetterMenusFavoriteItems
+  end
+
+  local function sortBagFavorites(list)
+    if not list.gen1BetterMenusBagFavorites then return end
+    local selected = list.items[list.index]
+    local selectedId = selected and selected.value
+    local rank = {}
+    for i, id in ipairs(Bag.order(list.game.save)) do rank[id] = i end
+    local favorites = favoriteItems(list.game.save)
+    table.sort(list.items, function(a, b)
+      local af, bf = favorites[a.value] == true, favorites[b.value] == true
+      if af ~= bf then return af end
+      return (rank[a.value] or math.huge) < (rank[b.value] or math.huge)
+    end)
+    if selectedId then
+      for i, item in ipairs(list.items) do
+        if item.value == selectedId then list.index = i break end
+      end
+    end
+    local maxRow = list.cursorRows or list.rows
+    if list.index - list.scroll > maxRow then
+      list.scroll = list.index - maxRow
+    elseif list.index - list.scroll < 1 then
+      list.scroll = list.index - 1
+    end
+  end
+
+  local function drawFavoriteHeart(x, y)
+    love.graphics.rectangle("fill", x + 1, y + 1, 2, 1)
+    love.graphics.rectangle("fill", x + 4, y + 1, 2, 1)
+    love.graphics.rectangle("fill", x, y + 2, 7, 2)
+    love.graphics.rectangle("fill", x + 1, y + 4, 5, 1)
+    love.graphics.rectangle("fill", x + 2, y + 5, 3, 1)
+    love.graphics.rectangle("fill", x + 3, y + 6, 1, 1)
+  end
 
 ListMenu.new = function(game, ...)
   local self = originalListMenuNew(game, ...)
+  local bagItems = self.itemBox and self.kind == "bag"
 
   -- Newer Gen1Recomp builds mark the overworld bag as a partial item box,
   -- which disables its palette and leaves the wide replacement transparent.
@@ -434,6 +477,23 @@ ListMenu.new = function(game, ...)
     self.sgbPalettes = wholeWide
     self.rows = 7
     self.cursorRows = nil
+  end
+
+  if bagItems then
+    self.gen1BetterMenusBagFavorites = true
+    self.update = function(list, dt)
+      if list.game.input:wasPressed("start") then
+        local item = list.items[list.index]
+        if not item then return end
+        local favorites = favoriteItems(game.save)
+        favorites[item.value] = not favorites[item.value] or nil
+        require("src.core.Sound").play(game.data, "Swap")
+        sortBagFavorites(list)
+        return
+      end
+      originalListMenuUpdate(list, dt)
+    end
+    sortBagFavorites(self)
   end
 
   local parent = game and game.stack and game.stack:top()
@@ -449,6 +509,7 @@ end
   PokedexMenu.sgbPalettes = wholeWide
 
   ListMenu.draw = function(self)
+    sortBagFavorites(self)
     drawOuterFrame(self.title)
     if #self.items == 0 then
       Font.draw(Strings("Nothing here."), 24, 64)
@@ -458,9 +519,14 @@ end
       local item = self.items[i]
       if not item then break end
       local y = 8 + row * 16
-      Font.draw(item.label, 24, y)
+      local labelX = 24
+      if self.gen1BetterMenusBagFavorites
+          and favoriteItems(self.game.save)[item.value] then
+        drawFavoriteHeart(labelX + Font.width(item.label) + 4, y)
+      end
+      Font.draw(item.label, labelX, y)
       if item.ball then
-        local bx, by = 24 + Font.width(item.label) + 11, y + 3
+        local bx, by = labelX + Font.width(item.label) + 11, y + 3
         love.graphics.circle("fill", bx, by, 3.5)
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", bx - 3.5, by - 0.5, 7, 1)
