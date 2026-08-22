@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.12
+-- Gen1BetterMenus 1.0.13
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -6,6 +6,7 @@ local Renderer = require("src.render.Renderer")
 local Pipelines = require("src.render.Pipelines")
 local Zoom = require("src.render.Zoom")
 local Game = require("src.core.Game")
+local StateStack = require("src.core.StateStack")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
 
@@ -14,8 +15,12 @@ local Screens = require("src.ui.Screens")
 local OptionsMenu = require("src.ui.OptionsMenu")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
+local BoxMenu = require("src.ui.BoxMenu")
+local PlayerPC = require("src.ui.PlayerPC")
 local PokedexMenu = require("src.ui.PokedexMenu")
 local PartyMenu = require("src.ui.PartyMenu")
+local TrainerCard = require("src.ui.TrainerCard")
+local NamingScreen = require("src.ui.NamingScreen")
 local SummaryMenu = require("src.ui.SummaryMenu")
 local TextBox = require("src.render.TextBox")
 local ChoiceBox = require("src.ui.ChoiceBox")
@@ -25,10 +30,18 @@ local LinkState = require("src.link.LinkState")
 local BattleState = require("src.battle.BattleState")
 local QuarantineReport = require("src.ui.QuarantineReport")
 local TitleState = require("src.ui.TitleState")
+local OakSpeech = require("src.ui.OakSpeech")
 local Runtime = require("src.mods.Runtime")
 
 local UI_W, UI_H = 304, 144
 local UI_TW, UI_TH = UI_W / 8, UI_H / 8
+local TITLE_PANEL_TW = 13
+local TITLE_INFO_TH = 10
+
+local function centeredTitlePanel(th)
+  return math.floor((UI_TW - TITLE_PANEL_TW) / 2),
+    math.floor((UI_TH - th) / 2)
+end
 
 local PALETTES = {
   gameboy = PaletteFX.CLASSIC,
@@ -116,17 +129,20 @@ local function makeWideState(class)
       end
     end
   end
+
+	local hasBattle = false
+	for i = 1, #states do
+	  if states[i] ~= self and states[i] and states[i].isBattle then
+	    hasBattle = true
+	    break
+	  end
+	end
+	if not hasBattle then return false end
+
 	  local base = self.game.stack:visibleBase()
 	  local baseState = states[base]
       if baseState and baseState.isOverworld then
-	    local hasBattle = false
-        for i = 1, #states do
-		  if states[i] ~= self and states[i] and states[i].isBattle then
-		  hasBattle = true
-		  break
-		end
-	end
-	if not hasBattle then return false end
+	    return true
 end	
     for i = 1, #states do
       if states[i] ~= self and states[i] and (states[i].isBattle or not states[i].isOverworld) then
@@ -234,6 +250,45 @@ local function drawOuterFrame(title)
   Font.drawBox(0, 0, UI_TW, UI_TH)
   love.graphics.setColor(0, 0, 0, 1)
   if title then Font.draw(Strings(title), 16, 8) end
+end
+
+local function pcOverlayAbove(menu)
+  local states = menu.game and menu.game.stack and menu.game.stack.states or {}
+  for i = 1, #states do
+    if states[i] == menu then
+      for j = i + 1, #states do
+        local above = states[j]
+        local aboveMt = getmetatable(above)
+        if aboveMt == Menu or aboveMt == ListMenu or above.isTextBox then
+          return true
+        end
+      end
+      break
+    end
+  end
+  return false
+end
+
+local function drawPCChrome(game)
+  Font.drawBox(0, 12, UI_TW, 6)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(Strings("What?"), 8, 112)
+  Font.drawBox(UI_TW - 11, 14, 11, 4)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(Strings("BOX No."), (UI_TW - 10) * 8, 128)
+  local n = game.save.currentBox or 1
+  Font.draw(tostring(n), (n >= 10 and UI_TW - 3 or UI_TW - 2) * 8, 128)
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function isCenterPCMenu(items, opts)
+  if not opts.noSound or #items < 3 then return false end
+  local first = tostring(items[1] and items[1].label or "")
+  local second = tostring(items[2] and items[2].label or "")
+  local last = tostring(items[#items] and items[#items].label or "")
+  return (first == "BILL'S PC" or first == "SOMEONE'S PC")
+    and second:match("'s PC$") ~= nil
+    and last == "LOG OFF"
 end
 
 local function installReportLayout()
@@ -370,6 +425,17 @@ local function installListLayout()
 ListMenu.new = function(game, ...)
   local self = originalListMenuNew(game, ...)
 
+  -- Newer Gen1Recomp builds mark the overworld bag as a partial item box,
+  -- which disables its palette and leaves the wide replacement transparent.
+  -- This mod owns the bag's full-screen layout, so restore only that instance.
+  if self.itemBox then
+    self.itemBox = false
+    self.isOpaque = false
+    self.sgbPalettes = wholeWide
+    self.rows = 7
+    self.cursorRows = nil
+  end
+
   local parent = game and game.stack and game.stack:top()
   if parent and getmetatable(parent) == Menu then
   self.isWideBattleLayout = function() return false end
@@ -482,11 +548,12 @@ local function installMenuLayout()
     local info = menu.game and menu.game.stack and menu.game.stack:top()
     if not info or info == menu or not info.titleUiBox
        or not info.title or not info.save then return end
-    local tw, th = menu.tw, menu.th
-    info.titleUiBox = { 0, 0, tw - 1, th - 1 }
+    local tw, th = TITLE_PANEL_TW, TITLE_INFO_TH
+    local tx, ty = centeredTitlePanel(th)
+    info.titleUiBox = { tx, ty, tx + tw - 1, ty + th - 1 }
     info.enhancedTitleInfo = true
     info.uiSize = function() return UI_W, UI_H end
-    info.isWideBattleLayout = function() return true end
+    info.isWideBattleLayout = function() return false end
     info.isOpaque = false
     info.draw = function(self)
       local save = self.save
@@ -504,10 +571,11 @@ local function installMenuLayout()
         Strings("TIME %d:%02d", math.floor(seconds / 3600),
           math.floor(seconds / 60) % 60),
       }
-      Font.drawBox(0, 0, tw, th)
+      Font.drawBox(tx, ty, tw, th)
       love.graphics.setColor(0, 0, 0, 1)
       for i, row in ipairs(rows) do
-        Font.draw(truncate(row, inner), 8, i * 8)
+        Font.draw(truncate(row, inner), (tx + 1) * 8,
+          (ty + i * 2 - 1) * 8)
       end
       love.graphics.setColor(1, 1, 1, 1)
     end
@@ -515,11 +583,18 @@ local function installMenuLayout()
 
   Menu.new = function(game, items, opts)
     opts = opts or {}
+    local parent = game and game.stack and game.stack:top()
+    local pcMenu = opts.noSound or (parent and parent.gen1BetterMenusPC)
+    local centerPCMenu = isCenterPCMenu(items, opts)
+    if centerPCMenu then
+      opts.tx, opts.tw = 0, UI_TW
+    end
     local titleMenu = game and game.stack
       and getmetatable(game.stack:top()) == TitleState
     if titleMenu then
-      opts.tx, opts.ty, opts.tw = 0, 0, 13
       opts.rowStep, opts.th = 1, #items + 2
+      opts.tw = TITLE_PANEL_TW
+      opts.tx, opts.ty = centeredTitlePanel(opts.th)
     end
     if opts.startCloses then
       local widest = 0
@@ -531,13 +606,51 @@ local function installMenuLayout()
       opts.anchor = "topright"
     end
     local self = originalNew(game, items, opts)
-	local parent = game and game.stack and game.stack:top()
+	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
   self.tx = self.tx + (UI_TW - 20)
   self.isWideBattleLayout = function() return false end
+  local drawMenu = self.draw
+  self.isOpaque = false
+  self.sgbPalettes = wholeWide
+  self.draw = function(menu)
+    parent:draw()
+    drawMenu(menu)
+  end
 end
+    if pcMenu then
+      self.gen1BetterMenusPC = true
+      self.gen1BetterMenusCenterPC = centerPCMenu
+      self.isWideBattleLayout = function() return false end
+      if not centerPCMenu and not self.anchor
+          and not (parent and getmetatable(parent) == ListMenu) then
+        self.tx = self.tx + (UI_TW - 20)
+      end
+    end
     self.enhancedTitleMenu = titleMenu
+    return self
+  end
+
+  local originalBoxMenuNew = BoxMenu.new
+  BoxMenu.new = function(game)
+    local self = originalBoxMenuNew(game)
+    self.tx, self.tw = 0, UI_TW
+    self.gen1BetterMenusPC = true
+    self.gen1BetterMenusPCChrome = true
+    self.draw = function(menu)
+      if pcOverlayAbove(menu) then return end
+      Menu.draw(menu)
+      drawPCChrome(game)
+    end
+    return self
+  end
+
+  local originalPlayerPCNew = PlayerPC.new
+  PlayerPC.new = function(game, opts)
+    local self = originalPlayerPCNew(game, opts)
+    self.tx, self.tw = 0, UI_TW
+    self.gen1BetterMenusPC = true
     return self
   end
 
@@ -583,13 +696,20 @@ end
       currentSprite = self.currentSprite
       self.currentSprite = function() return nil, false end
     end
-    originalTitleDraw(self)
+    local titlePanel = top and
+      (top.enhancedTitleMenu or top.enhancedTitleInfo)
+    if titlePanel then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+    else
+      originalTitleDraw(self)
+    end
     if currentSprite then self.currentSprite = currentSprite end
-    local titleVisible = top == self or (top and
-      (top.enhancedTitleMenu or top.enhancedTitleInfo))
+    local titleVisible = top == self
     if self.enhancedYellowPikachu and titleVisible then
       PaletteFX.markUiSpriteRedraw(
-        self.yellowPikachu, nil, 32, 64 - (self.scy or 0))
+        self.yellowPikachu, nil,
+        32, 64 - (self.scy or 0))
     end
   end
 
@@ -597,24 +717,9 @@ end
     local top = game and game.stack and game.stack:top()
     if top and top.titleUiBox
        and (top.enhancedTitleMenu or top.enhancedTitleInfo) then
-      -- Stock TitleState appends the top state's menu box to its classic
-      -- 160px palette list. The engine then centres that entire list inside
-      -- our 304px title canvas, shifting the box over the title logo. The
-      -- render.zones hook below already colors the wide box at its real
-      -- coordinates, so suppress only the stale classic copy.
-      local box = top.titleUiBox
-      top.titleUiBox = nil
-      local ok, result = pcall(originalTitlePalettes, self, game)
-      top.titleUiBox = box
-      if not ok then error(result) end
-      if self.yellowLayout and result then
-        if result[1] then result[1].colors = YELLOW_TITLE_LOGO end
-        if result[2] then result[2].colors = YELLOW_TITLE_PIKACHU end
-        if result[3] then result[3].colors = YELLOW_TITLE_LOGO end
-        result[#result + 1] = PaletteFX.zone(
-          PaletteFX.GRAYS, 0, 17, 19, 17)
-      end
-      return result
+      return {
+        PaletteFX.zone(PaletteFX.GRAYS, 0, 0, UI_TW - 1, UI_TH - 1),
+      }
     end
     local result = originalTitlePalettes(self, game)
     if self.yellowLayout and result then
@@ -637,8 +742,7 @@ Menu.isWideBattleLayout = function(self)
   end
 end
   for i = 1, #states do
-    if states[i] ~= self and states[i]
-        and (states[i].isBattle or not states[i].isOverworld) then
+    if states[i] ~= self and states[i] and states[i].isBattle then
       return true
     end
   end
@@ -648,6 +752,9 @@ end
   Menu.isOpaque = false
   local originalMenuDraw = Menu.draw
   Menu.draw = function(self)
+  if self.gen1BetterMenusPC and pcOverlayAbove(self) then
+    return
+  end
   local states = self.game and self.game.stack and self.game.stack.states or {}
 
   for i = 1, #states - 1 do
@@ -662,6 +769,7 @@ end
 
 local function installBattlePaletteIsolation()
   local originalBlitCanvas = Renderer.blitCanvas
+
   Renderer.blitCanvas = function(self, canvas, sx, sy, zones, ...)
     if canvas == self.canvas and zones then
       local filtered = {}
@@ -750,21 +858,110 @@ end
 
 local function installDialogueLayout()
   local originalNew = TextBox.new
+  local function widenSavePanel(game, parent)
+    if parent and parent.holdsUIAnchors and parent.openPrompt
+        and parent.delay ~= nil and not parent.gen1BetterMenusSavePanel then
+      parent.gen1BetterMenusSavePanel = true
+      parent.uiSize = function() return UI_W, UI_H end
+      parent.isWideBattleLayout = function() return false end
+      parent.sgbPalettes = wholeWide
+      parent.draw = function()
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+        local save = game.save
+        local badges = require("src.inventory.Badges").count(game.data, save)
+        local owned = 0
+        for _ in pairs(save.pokedex and save.pokedex.owned or {}) do
+          owned = owned + 1
+        end
+        local seconds = math.floor(save.playTime or 0)
+        local rows = {
+          { Strings("PLAYER"), (save.player and save.player.name) or "RED" },
+          { Strings("BADGES"), tostring(badges) },
+          { Strings("POKéDEX"), tostring(owned) },
+          { Strings("TIME"), ("%d:%02d"):format(
+              math.floor(seconds / 3600), math.floor(seconds / 60) % 60) },
+        }
+        Font.drawBox(0, 0, UI_TW, 10)
+        love.graphics.setColor(0, 0, 0, 1)
+        for i, row in ipairs(rows) do
+          local y = i * 16
+          Font.draw(row[1], 16, y)
+          Font.draw(row[2], UI_W - 16 - Font.width(row[2]), y)
+        end
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+    end
+  end
+
+  local originalPush = StateStack.push
+  StateStack.push = function(stack, state, ...)
+    -- The SAVE panel waits 30 frames before creating its TextBox. Widen it
+    -- as it enters the stack so the retained START menu never flashes first.
+    widenSavePanel(Game, state)
+    return originalPush(stack, state, ...)
+  end
+
   TextBox.new = function(game, text, onDone, opts)
     local self = originalNew(game, text, onDone, opts)
-	
-	    local parent = game and game.stack and game.stack:top()
+    local parent = game and game.stack and game.stack:top()
+    widenSavePanel(game, parent)
+    local inWideBattle, wideBattleState = false, nil
+    for _, state in ipairs(game and game.stack and game.stack.states or {}) do
+      if state and state.isBattle and state.uiSize then
+        local w = state:uiSize()
+        if w and w > Renderer.WIDTH then
+          inWideBattle, wideBattleState = true, state
+          break
+        end
+      end
+    end
     if parent and parent.uiSize then
       local w, h = parent:uiSize()
       if w and w > Renderer.WIDTH then
         self.uiSize = function() return w, h end
-        self.isWideBattleLayout = function() return false end
+        self.isWideBattleLayout = function() return inWideBattle end
         self.holdsUIAnchors = true
       end
     end
     self.boxTx, self.boxTy, self.boxTw, self.boxTh = 0, 13, UI_TW, 5
     self.maxCols = 36
     self.textX, self.line1Y, self.line2Y = 8, 112, 128
+    if parent and getmetatable(parent) == OakSpeech then
+      -- The dialogue is 304px wide, but OakSpeech still draws its original
+      -- 160px scene. Let the engine center that classic scene and its palette
+      -- masks inside the wide canvas.
+      self.isWideBattleLayout = function() return true end
+    end
+    if inWideBattle and tostring(text):lower():find("nickname", 1, true)
+        and wideBattleState and wideBattleState.enemy
+        and wideBattleState.enemy.sprite then
+      local originalDraw = self.draw
+      self.isOpaque = true
+      self.gen1BetterMenusSolidNickname = true
+      self.holdsUIAnchors = false
+      self.sgbPalettes = function(_, currentGame)
+        local base = colors()
+        local palette = { base[1], base[2], base[3], base[4] }
+        local r, g, b = PaletteFX.paperShade(currentGame.data)
+        palette[1] = {
+          math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+          math.floor(b * 255 + 0.5),
+        }
+        return { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
+      end
+      wideBattleState.holdsUIAnchors = false
+      self.draw = function(box)
+        local sprite = wideBattleState.enemy.sprite
+        local sw, sh = sprite:getDimensions()
+        local sx, sy = math.floor((UI_W - sw) / 2), 24
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+        love.graphics.draw(sprite, sx, sy)
+        PaletteFX.markTrueColor(sx, sy, sw, sh)
+        originalDraw(box)
+      end
+    end
     -- Reflow after widening and rebuild the typewriter's current line so it
     -- cannot retain the original 18-column first-page split.
     self.pages = TextBox.paginate(TextBox.substitute(game, text), self.maxCols)
@@ -797,6 +994,96 @@ local function installDialogueLayout()
 end
 
 local function installSupportingScreens()
+  -- The classic trainer card is a panel over the field. Keeping the world in
+  -- the visible stack replaces its black outer frame with the overworld.
+  TrainerCard.isOpaque = false
+
+  local originalNamingNew = NamingScreen.new
+  NamingScreen.new = function(game, opts)
+    local self = originalNamingNew(game, opts)
+    local wideBattle, introNaming = false, false
+    local introAnchors = {}
+    for _, state in ipairs(game and game.stack and game.stack.states or {}) do
+      if getmetatable(state) == OakSpeech then introNaming = true end
+      if state and state.isBattle and state.uiSize then
+        local w = state:uiSize()
+        if w and w > Renderer.WIDTH then wideBattle = true break end
+      end
+    end
+    if wideBattle then
+      local originalDraw = self.draw
+      self.gen1BetterMenusSolidNickname = true
+      self.uiSize = function() return UI_W, UI_H end
+      self.isWideBattleLayout = function() return true end
+      self.sgbPalettes = function(_, currentGame)
+        local base = colors()
+        local palette = { base[1], base[2], base[3], base[4] }
+        local r, g, b = PaletteFX.paperShade(currentGame.data)
+        palette[1] = {
+          math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5),
+          math.floor(b * 255 + 0.5),
+        }
+        return { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
+      end
+      self.draw = function(screen)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+        love.graphics.push()
+        love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
+        originalDraw(screen)
+        love.graphics.pop()
+      end
+    elseif introNaming then
+      -- Oak's held dialogue remains below this screen and would otherwise
+      -- split the naming UI at its bottom anchor. Temporarily release only
+      -- that retained dialogue anchor while the naming screen is active.
+      for _, state in ipairs(game and game.stack and game.stack.states or {}) do
+        if state and state.isTextBox then
+          introAnchors[#introAnchors + 1] = {
+            state = state,
+            holdsUIAnchors = state.holdsUIAnchors,
+            isWideBattleLayout = state.isWideBattleLayout,
+          }
+          state.holdsUIAnchors = false
+          state.isWideBattleLayout = function() return false end
+        end
+      end
+      local originalOnDone = self.onDone
+      self.onDone = function(...)
+        for _, anchor in ipairs(introAnchors) do
+          anchor.state.holdsUIAnchors = anchor.holdsUIAnchors
+          anchor.state.isWideBattleLayout = anchor.isWideBattleLayout
+        end
+        introAnchors = {}
+        if originalOnDone then return originalOnDone(...) end
+      end
+      local originalDraw = self.draw
+      self.gen1BetterMenusIntroNaming = true
+      self.isOpaque = true
+      self.uiSize = function() return UI_W, UI_H end
+      self.isWideBattleLayout = function() return true end
+      self.letterboxWhite = true
+      self.sgbPalettes = wholeWide
+      local originalEnter = self.enter
+      self.enter = function(screen, ...)
+        originalEnter(screen, ...)
+        -- The preset list is an overlay on this naming screen. Keep this
+        -- solid canvas opaque so Oak's held scene/dialogue cannot supply a
+        -- displaced palette field behind either player's or rival's list.
+        screen.isOpaque = true
+      end
+      self.draw = function(screen)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+        love.graphics.push()
+        love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
+        originalDraw(screen)
+        love.graphics.pop()
+      end
+    end
+    return self
+  end
+
   local function partySlot(i)
     local col = math.floor((i - 1) / 3)
     local row = (i - 1) % 3
@@ -1140,6 +1427,7 @@ end
 return function(mod)
   activeMod = mod
   local frameGame
+  local nicknameBackdrop
 
   local function visibleTitle(game)
     local top = game and game.stack and game.stack:top()
@@ -1183,6 +1471,31 @@ return function(mod)
   installLinkLayout()
   installReportLayout()
   installLocationBanners(mod)
+  mod.hooks:wrap("render.compose", function(next, renderer, ctx)
+    local handled = next(renderer, ctx)
+    local solidNickname = false
+    local game = frameGame
+    for _, state in ipairs(game and game.stack and game.stack.states or {}) do
+      if state and state.gen1BetterMenusSolidNickname then
+        solidNickname = true
+        break
+      end
+    end
+    if solidNickname and ctx and ctx.ww and ctx.wh then
+      if not nicknameBackdrop
+         or nicknameBackdrop:getWidth() ~= ctx.ww
+         or nicknameBackdrop:getHeight() ~= ctx.wh then
+        nicknameBackdrop = love.graphics.newCanvas(ctx.ww, ctx.wh)
+      end
+      local previous = love.graphics.getCanvas()
+      love.graphics.setCanvas(nicknameBackdrop)
+      love.graphics.clear(PaletteFX.paperShade(game.data))
+      love.graphics.setCanvas(previous)
+      love.graphics.setColor(1, 1, 1, 1)
+      renderer:setWorldOverride(nicknameBackdrop)
+    end
+    return handled
+  end)
   mod.hooks:wrap("battle.overlay", function(next, battle)
     next(battle)
     if not (battle and battle.wideLayout and battle:wideLayout()
@@ -1199,6 +1512,24 @@ return function(mod)
   end)
   mod.hooks:wrap("render.letterbox", function(next, ctx)
     next(ctx)
+    local introNaming = false
+    for _, state in ipairs(frameGame and frameGame.stack
+        and frameGame.stack.states or {}) do
+      if state and state.gen1BetterMenusIntroNaming then
+        introNaming = true
+        break
+      end
+    end
+    if introNaming and ctx and ctx.ww and ctx.wh then
+      local palette = PaletteFX.effectiveColors(colors())
+      local paper = palette and palette[1] or { 255, 255, 255 }
+      local r, green, b, a = love.graphics.getColor()
+      love.graphics.setColor(
+        paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
+      love.graphics.rectangle("fill", 0, 0, ctx.ww, ctx.wh)
+      love.graphics.setColor(r, green, b, a)
+      return
+    end
     local title = visibleTitle(frameGame)
     if not (title and ctx and ctx.ww and ctx.wh) then
       return
@@ -1220,6 +1551,7 @@ return function(mod)
     next(game, viewport)
     local top = game and game.stack and game.stack:top()
     local options = game and game.save and game.save.options
+
 	local pipelineId = Pipelines.worldPipeline()
     if not (top and getmetatable(top) == BattleState
             and top.extendedHUD and top:extendedHUD()
@@ -1273,6 +1605,10 @@ return function(mod)
         if stateMt == Menu then
           out[#out + 1] = PaletteFX.zone(colors(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
+          if state.gen1BetterMenusPCChrome then
+            out[#out + 1] = PaletteFX.zone(
+              colors(), 0, 12, UI_TW - 1, UI_TH - 1)
+          end
         elseif state and state.isTextBox then
           out[#out + 1] = PaletteFX.zone(colors(), state.boxTx, state.boxTy,
             state.boxTx + state.boxTw - 1,
