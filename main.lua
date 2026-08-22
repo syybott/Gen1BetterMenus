@@ -160,13 +160,16 @@ end
 local function isOptionRowsScreen(state)
   if not state or not state.rows then return false end
 
+  -- New Gen1Recomp opt-in marker for mod-created options screens.
+  if state.isModOptions then return true end
+
+  -- Legacy fallback for older builds/mods that do not declare isModOptions.
   local sid = type(state.screenId) == "string"
     and state.screenId
     or ""
 
   return sid:match("Options$")
       or sid:match("Settings$")
-      or sid == "QualityOfLife"
 end
 
 local function installOverworldScaleStability()
@@ -403,11 +406,9 @@ OptionsMenu.isWideBattleLayout = function(self)
     if states[i] == self then
       local child = states[i + 1]
 
-      if child and child.rows and type(child.screenId) == "string"
-          and (child.screenId:match("Options$")
-            or child.screenId:match("Settings$")) then
-        return false
-      end
+	if isOptionRowsScreen(child) then
+	  return false
+	end
 
       break
     end
