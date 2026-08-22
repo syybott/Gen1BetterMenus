@@ -47,6 +47,9 @@ end
 local PALETTES = {
   gameboy = PaletteFX.CLASSIC,
   blackwhite = PaletteFX.GRAYS,
+  ogred = PaletteFX.GBC_BG,
+  ogredobj = PaletteFX.GBC_OBJ,
+  ogblue = PaletteFX.GBC_BG_BLUE,
 
   soulsilver = {
     { 248, 248, 248 }, { 168, 208, 232 },
@@ -71,6 +74,130 @@ local PALETTES = {
   emerald = {
     { 248, 255, 240 }, { 160, 224, 184 },
     { 48, 152, 112 }, { 16, 56, 48 },
+  },
+  amiga_wb = {
+	{ 210, 210, 210 }, { 255, 136, 0 },
+	{ 0, 85, 170 }, { 0, 0, 0 },
+  },
+  amiga_dp = {
+	{ 221, 221, 238 }, { 119, 136, 187 },
+	{ 68, 68, 119 }, { 17, 17, 34 },
+  },
+  c64 = {
+	{ 160, 160, 255 }, { 108, 94, 181 },
+	{ 64, 49, 141 }, { 24, 16, 72 },
+  },
+  spectrum = {
+	{ 255, 255, 255 }, { 0, 204, 204 },
+	{ 204, 0, 204 }, { 0, 0, 0 },
+  },
+  cga = {
+	{ 255, 255, 255 }, { 60, 230, 230 },
+	{ 255, 85, 255 }, { 0, 0, 0 },
+  },
+  apple2 = {
+	{ 200, 255, 200 }, { 80, 220, 110 },
+	{ 30, 130, 60 }, { 8, 32, 16 },
+  },
+  pocket = {
+	{ 224, 224, 224 }, { 160, 160, 160 },
+	{ 88, 88, 88 }, { 24, 24, 24 },
+  },
+  gblight = {
+	{ 0, 251, 199 }, { 0, 187, 155 },
+	{ 0, 107, 96 }, { 0, 48, 48 },
+  },
+  virtualboy = {
+	{ 255, 150, 130 }, { 215, 45, 32 },
+	{ 120, 12, 8 }, { 12, 0, 0 },
+  },
+  amber = {
+	{ 255, 196, 64 }, { 200, 140, 30 },
+	{ 120, 76, 10 }, { 24, 12, 0 },
+  },
+  phosphor = {
+	{ 170, 255, 170 }, { 80, 200, 90 },
+	{ 30, 110, 45 }, { 5, 25, 10 },
+  },
+  plasma = {
+	{ 255, 230, 180 }, { 255, 140, 60 },
+	{ 170, 40, 90 }, { 30, 10, 40 },
+  },
+  rainbow = {
+	{ 255, 241, 120 }, { 255, 120, 150 },
+	{ 150, 70, 200 }, { 30, 20, 80 },
+  },
+  acid = {
+	{ 236, 255, 150 }, { 120, 225, 140 },
+	{ 150, 60, 190 }, { 35, 15, 55 },
+  },
+  fuchsia = {
+	{ 255, 214, 240 }, { 255, 105, 190 },
+	{ 170, 30, 120 }, { 40, 0, 40 },
+  },
+  sunset = {
+	{ 255, 224, 168 }, { 255, 140, 90 },
+	{ 170, 60, 90 }, { 40, 20, 60 },
+  },
+  ocean = {
+	{ 200, 245, 255 }, { 80, 190, 220 },
+	{ 25, 95, 150 }, { 5, 20, 60 },
+  },
+  forest = {
+	{ 214, 240, 180 }, { 130, 190, 90 },
+	{ 50, 110, 60 }, { 12, 35, 25 },
+  },
+  lava = {
+	{ 255, 240, 180 }, { 255, 150, 40 },
+	{ 180, 40, 20 }, { 35, 8, 8 },
+  },
+  ice = {
+	{ 240, 252, 255 }, { 170, 220, 245 },
+	{ 80, 130, 190 }, { 20, 35, 80 },
+  },
+  candy = {
+	{ 255, 235, 245 }, { 255, 160, 200 },
+	{ 190, 90, 160 }, { 60, 25, 70 },
+  },
+  vapor = {
+	{ 245, 225, 255 }, { 95, 185, 205 },
+	{ 200, 80, 180 }, { 45, 20, 70 },
+  },
+  neon = {
+	{ 225, 255, 90 }, { 60, 230, 180 },
+	{ 200, 40, 160 }, { 15, 10, 35 },
+  },
+  toxic = {
+	{ 225, 255, 60 }, { 130, 210, 30 },
+	{60, 120, 25}, {15, 30, 10},
+  },
+  sepia = {
+	{ 240, 224, 196 }, { 186, 155, 116 },
+	{ 110, 84, 58 }, { 32, 24, 18 },
+  },
+  noir = {
+	{ 245, 245, 245 }, { 150, 150, 155 },
+	{ 60, 60, 68 }, { 0, 0, 0 },
+  },
+  cherry = {
+	{ 255, 225, 225 }, { 235, 90, 90 },
+	{ 150, 25, 45 }, { 40, 5, 15 },
+  },
+  midnight = {
+	{ 180, 195, 235 }, { 90, 110, 180 },
+	{ 40, 50, 110 }, { 8, 10, 30 },
+  },
+  gold = {
+	{ 255, 244, 200 }, { 228, 190, 80 },
+	{ 150, 110, 30 }, { 40, 28, 8 },
+  },
+  mint = {
+	{ 224, 255, 240 }, { 130, 225, 190 },
+	{ 45, 140, 120 }, { 10, 45, 40 },
+  },
+  grape = {
+	{ 235, 220, 255 }, { 170, 130, 225 },
+	{ 95, 55, 150 }, { 28, 12, 50 },
   },
 }
 
@@ -1070,6 +1197,7 @@ local function installSupportingScreens()
   -- The classic trainer card is a panel over the field. Keeping the world in
   -- the visible stack replaces its black outer frame with the overworld.
   TrainerCard.isOpaque = false
+  TrainerCard.sgbPalettes = wholeWide
 
   local originalNamingNew = NamingScreen.new
   NamingScreen.new = function(game, opts)
@@ -1528,6 +1656,37 @@ return function(mod)
         { "LEAFGREEN", "leafgreen" },
         { "CRYSTAL", "crystal" },
         { "EMERALD", "emerald" },
+		{ "1", "amiga_wb" },
+		{ "2", "amiga_dp" },
+		{ "3", "c64" },
+		{ "4", "spectrum" },
+		{ "5", "cga" },
+		{ "6", "apple2" },
+		{ "7", "pocket" },
+		{ "8", "gblight" },
+		{ "9", "virtualboy" },
+		{ "10", "amber" },
+		{ "11", "phosphor" },
+		{ "12", "plasma" },
+		{ "13", "rainbow" },
+		{ "14", "acid" },
+		{ "15", "fuchsia" },
+		{ "16", "sunset" },
+		{ "17", "ocean" },
+		{ "18", "forest" },
+		{ "19", "lava" },
+		{ "20", "ice" },
+		{ "21", "candy" },
+		{ "22", "vapor" },
+		{ "23", "neon" },
+		{ "24", "toxic" },
+		{ "25", "sepia" },
+		{ "26", "noir" },
+		{ "27", "cherry" },
+		{ "28", "midnight" },
+		{ "29", "gold" },
+		{ "30", "mint" },
+		{ "31", "grape" },
       } },
     { key = "inverse", label = "INVERSE", type = "toggle",
       default = false },
@@ -1689,6 +1848,8 @@ return function(mod)
         elseif stateMt == ChoiceBox then
           out[#out + 1] = PaletteFX.zone(colors(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
+        elseif stateMt == TrainerCard then
+          out[#out + 1] = PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1)
         elseif stateMt == QuarantineReport then
           out[#out + 1] = PaletteFX.zone(colors(), 0, 0, 19, 17)
         elseif state and state.titleUiBox then
