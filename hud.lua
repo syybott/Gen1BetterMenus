@@ -154,6 +154,28 @@ return function(mod, menuColors)
     love.graphics.rectangle("fill", tx * 8 + 16, ty * 8 + 3, px, 2)
   end
 
+	local xpMarkImage
+
+	local function getXpMarkImage()
+	  if xpMarkImage ~= nil then
+		return xpMarkImage or nil
+	  end
+
+	  local path = mod.path .. "/assets/xp_x.png"
+
+	  local ok, img = pcall(love.graphics.newImage, path)
+
+	  if not ok or not img then
+		xpMarkImage = false
+		return nil
+	  end
+
+	  img:setFilter("nearest", "nearest")
+
+	  xpMarkImage = img
+	  return img
+	end
+
   -- Add a real EXP row directly above the HUD's native lower rule. Keep each
   -- native font tile on the integer pixel grid, but use a compact seven-pixel
   -- advance so the three glyphs fit beside the full-size numeric readout.
@@ -165,36 +187,78 @@ return function(mod, menuColors)
     end
   end
 
-  local function drawExpProgress(battle, battler, x, y, width, barY,
-      markColor)
-    local current, needed, ratio, atCap = expProgress(battle.data,
-      battler.mon)
-    ratio = math.max(0, math.min(1, ratio or 0))
-    local left = atCap and "MAX" or shortNumber(current)
-    local right = atCap and "" or shortNumber(needed)
-    local readout = right == "" and left or (left .. "/" .. right)
-    local readoutWidth = Font.width(readout)
-    local endX = x + width
-    local markerX = endX - readoutWidth
-    love.graphics.setColor(0, 0, 0, 1)
-    drawExpMark(x, y)
-    Font.draw(readout, markerX, y)
+local function drawExpProgress(battle, battler, x, y, width, barY,
+  markColor)
 
-    local barX = x
-    local barWidth = math.max(4, width)
+  local _, _, ratio = expProgress(battle.data, battler.mon)
+  ratio = math.max(0, math.min(1, ratio or 0))
 
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth, 1)
-    local fill = math.floor(barWidth * ratio + 0.5)
-    if ratio > 0 then fill = math.max(1, fill) end
-    if fill > 0 then
-      love.graphics.setColor(EXP_BLUE)
-      love.graphics.rectangle("fill", barX, barY, fill, 1)
-    end
-    if markColor ~= false then
-      PaletteFX.markTrueColor(barX, barY, barWidth, 1)
-    end
+  -- Use the same native HP bar shell
+  local tx = math.floor(x / 8)
+  local ty = math.floor(y / 8)
+  local segments = 10
+
+  local fakeMax = 48
+  local fakeHp = math.floor(fakeMax * ratio + 0.5)
+
+  if ratio > 0 then
+    fakeHp = math.max(1, fakeHp)
   end
+
+  HudTiles.drawHPBar(battle.data, tx, ty, {
+    hp = fakeHp,
+    stats = { hp = fakeMax },
+  }, nil, false, 11)
+
+  -- Replace HP green fill with EXP blue
+  local fill = math.floor(segments * 8 * ratio + 0.5)
+
+  if ratio > 0 then
+    fill = math.max(1, fill)
+  end
+
+  if fill > 0 then
+    love.graphics.setColor(EXP_BLUE)
+    love.graphics.rectangle(
+      "fill",
+      tx * 8 + 16,
+      ty * 8 + 3,
+      fill,
+      2
+    )
+  end
+
+  -- Cover only the H portion of the stock HP label
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.rectangle(
+    "fill",
+    tx * 8 + 1,
+    ty * 8 + 2,
+    4,
+    4
+  )
+
+  -- Draw our custom X in the exact same spot
+  local xpMark = getXpMarkImage()
+
+  if xpMark then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.draw(
+      xpMark,
+      tx * 8 + 1,
+      ty * 8 + 2
+    )
+  end
+
+  if markColor ~= false then
+    PaletteFX.markTrueColor(
+      tx * 8,
+      ty * 8,
+      (segments + 3) * 8,
+      8
+    )
+  end
+end
 
   local function enemyVisible(battle)
     local enemy = battle.enemy
