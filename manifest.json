@@ -1,7 +1,7 @@
 {
   "id": "gen1-better-menus",
   "name": "Gen1BetterMenus",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "api": 2,
   "entry": "main.lua",
   "profile": "overhaul",
@@ -11,7 +11,7 @@
   "permissions": ["engine_internals", "network"],
   "dependencies": [],
   "optional_dependencies": [],
-  "conflicts": [],
+  "conflicts": ["modern_pc_ui"],
   "description": "Enhanced widescreen menus, frames, and palette options for Gen1Recomp",
   "github": "syybott/Gen1BetterMenus"
 }

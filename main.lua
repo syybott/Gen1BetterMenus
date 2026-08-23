@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.17
+-- Gen1BetterMenus 1.0.18
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1627,6 +1627,47 @@ end
 
 return function(mod)
   activeMod = mod
+  
+    local genderMod = mod.find("gender_mod")
+  local genderExports = genderMod and genderMod.exports or nil
+
+  local compatibility = {
+    hgssSprites = mod.find("HGSS_SPRITES") ~= nil,
+  }
+
+  local source, readErr = mod:read("screen.lua")
+  if not source then
+    mod.log:error("screen.lua is missing (%s); reinstall the mod",
+      tostring(readErr or "unknown read error"))
+    return
+  end
+
+  local chunk, compileErr = load(source, "@" .. mod.path .. "/screen.lua")
+  if not chunk then
+    mod.log:error("screen.lua did not compile: %s", tostring(compileErr))
+    return
+  end
+
+  local okFactory, factory = pcall(chunk)
+  if not okFactory or type(factory) ~= "function" then
+    mod.log:error("screen.lua must return a factory function: %s",
+      tostring(factory))
+    return
+  end
+
+  local okScreen, screen = pcall(factory, mod, genderExports, compatibility)
+  if not okScreen or type(screen) ~= "table"
+      or type(screen.new) ~= "function" then
+    mod.log:error("PC screen factory failed: %s", tostring(screen))
+    return
+  end
+
+  if mod.content.screens:get("BoxMenu") then
+    mod.content.screens:override("BoxMenu", screen)
+  else
+    mod.content.screens:register("BoxMenu", screen)
+  end
+  
   local frameGame
   local nicknameBackdrop
 
