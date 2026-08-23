@@ -1,5 +1,7 @@
 # Third-Party Notices
 
+## gen1recomp-groovy-palette-frames
+
 Palette definitions adapted from:
 MadeinTaly/gen1recomp-groovy-palette-frames
 
@@ -7,6 +9,21 @@ Copyright (c) MadeinTaly
 Licensed under the MIT License.
 
 Gen1BetterMenus incorporates code from the following project:
+
+## Gen1Recomp Battle Info HUD
+
+Copyright (c) piftee
+
+Source:
+https://github.com/piftee/gen1recomp-battle-info-hud
+
+Gen1BetterMenus includes integration support for Gen1Recomp Battle Info HUD.
+
+Used for:
+- Enhanced battle information display.
+- Battle HUD rendering features.
+
+Original project by piftee. Any modifications or compatibility work performed for Gen1BetterMenus are maintained within this project and do not represent the original upstream project.
 
 ## Gen1Recomp Modern PC UI
 

@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.18
+-- Gen1BetterMenus 1.0.19
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -431,8 +431,29 @@ local function isCenterPCMenu(items, opts)
 end
 
 local function installReportLayout()
+  QuarantineReport.uiSize = function()
+    return UI_W, UI_H
+  end
+
+  QuarantineReport.isWideBattleLayout = function()
+    return false
+  end
+
+  QuarantineReport.isOpaque = false
+
   QuarantineReport.sgbPalettes = function()
-    return { PaletteFX.zone(colors(), 0, 0, 19, 17) }
+    return { PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1) }
+  end
+
+  local originalReportDraw = QuarantineReport.draw
+
+  QuarantineReport.draw = function(self)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    love.graphics.push()
+    love.graphics.translate(72, 0)
+    originalReportDraw(self)
+    love.graphics.pop()
   end
 end
 
@@ -809,16 +830,16 @@ local function installMenuLayout()
 	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
-  self.tx = self.tx + (UI_TW - 20)
-  self.isWideBattleLayout = function() return false end
-  local drawMenu = self.draw
-  self.isOpaque = false
-  self.sgbPalettes = wholeWide
-  self.draw = function(menu)
-    parent:draw()
-    drawMenu(menu)
-  end
-end
+	    self.tx = self.tx + (UI_TW - 20)
+	    self.isWideBattleLayout = function() return false end
+	    local drawMenu = self.draw
+	    self.isOpaque = false
+	    self.sgbPalettes = wholeWide
+	    self.draw = function(menu)
+		  parent:draw()
+		  drawMenu(menu)
+		end
+	end
     if pcMenu then
       self.gen1BetterMenusPC = true
       self.gen1BetterMenusCenterPC = centerPCMenu
@@ -1625,7 +1646,7 @@ local function installLinkLayout()
   end
 end
 
-return function(mod)
+return function(mod, menuColors)
   activeMod = mod
   
     local genderMod = mod.find("gender_mod")
@@ -1668,6 +1689,38 @@ return function(mod)
     mod.content.screens:register("BoxMenu", screen)
   end
   
+    local hudSource, hudReadErr = mod:read("hud.lua")
+	  if not hudSource then
+		mod.log:error("hud.lua is missing (%s); reinstall the mod",
+		  tostring(hudReadErr or "unknown read error"))
+		return
+	  end
+
+	  local hudChunk, hudCompileErr = load(
+		hudSource,
+		"@" .. mod.path .. "/hud.lua"
+	  )
+
+	  if not hudChunk then
+		mod.log:error("hud.lua did not compile: %s",
+		  tostring(hudCompileErr))
+		return
+	  end
+
+	  local hudOk, installHud = pcall(hudChunk)
+	  if not hudOk or type(installHud) ~= "function" then
+		mod.log:error("hud.lua must return an installer: %s",
+		  tostring(installHud))
+		return
+	  end
+
+	  local installedHud, hudInstallErr = pcall(installHud, mod, colors)
+	  if not installedHud then
+		mod.log:error("battle information HUD failed: %s",
+		  tostring(hudInstallErr))
+		return
+	  end
+  
   local frameGame
   local nicknameBackdrop
 
@@ -1686,6 +1739,8 @@ return function(mod)
   end
 
   mod.options:define({
+    { key = "battle_info", label = "BATTLE INFO", type = "toggle",
+	  default = true },
     { key = "palette", label = "MENU PALETTE", type = "choice",
       default = "soulsilver",
       choices = {
