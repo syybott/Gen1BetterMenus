@@ -395,15 +395,33 @@ local function renderWidePlayer(battle)
 
   local battler = battle.player
 
+  local shader
+  local previousShader
+
+  if battle.extendedHUD and battle:extendedHUD() and menuColors then
+    shader = PaletteFX.shader()
+    if shader then
+      previousShader = love.graphics.getShader
+        and love.graphics.getShader() or nil
+      PaletteFX.sendColors(shader, menuColors())
+      love.graphics.setShader(shader)
+    end
+  end
+
   love.graphics.setColor(0, 0, 0, 1)
   Font.drawBox(23, 7, 15, 6)
   Font.draw(fitName(battler.name, 40), 192, 64)
   drawStatus(battle, battler, 264, 64)
   drawLevel(battler, 264, 64)
-  drawNativeHP(battle, battler, 24, 9, 1, 10)
 
   Font.draw(("%3d/%3d"):format(shownHP(battler), battler.mon.stats.hp),
     240, 80)
+
+  if shader then
+    love.graphics.setShader(previousShader)
+  end
+
+  drawNativeHP(battle, battler, 24, 9, nil, 11)
 
   drawExpProgress(battle, battler, 192, 88, 96, 98)
 end
