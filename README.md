@@ -12,7 +12,7 @@ Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the addit
 
 ## ✨ Features
 
-- Faithful Gen 1-style frames, typography, spacing, and menu structure- Extended battle UI designed around Gen1Recomp's [`BATTLE HUD: EXTENDED`](https://github.com/bryanthaboi/gen1recomp/pull/1378)
+- Faithful Gen 1-style frames, typography, spacing, and menu structure
 - Widescreen Options and Settings screens
 - Modern PC interface
 - Enhanced battle information HUD
@@ -36,6 +36,7 @@ The mod is designed around the extended widescreen layout and will not display c
 ## ⚙️ Configuration
 **MENU PALETTE**  
 Select the palette used for menus and UI panels.
+
 **INVERSE**  
 Reverse the selected palette from light-to-dark into dark-to-light.
 
