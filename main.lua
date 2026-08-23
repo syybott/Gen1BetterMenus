@@ -1691,6 +1691,178 @@ return function(mod)
     { key = "inverse", label = "INVERSE", type = "toggle",
       default = false },
   })
+  
+    mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
+    items = next(game, items)
+
+    local insertAt = #items + 1
+
+    for i, item in ipairs(items) do
+      if tostring(item.label) == "SAVE" then
+        insertAt = i
+        break
+      end
+    end
+
+    table.insert(items, insertAt, {
+      label = Strings("MENU PALETTE"),
+      onSelect = function()
+  
+local paletteChoices = {
+	  "gameboy",
+	  "blackwhite",
+	  "soulsilver",
+	  "heartgold",
+	  "firered",
+	  "leafgreen",
+	  "crystal",
+	  "emerald",
+	  "ogred",
+	  "ogredobj",
+	  "ogblue",
+	  "amiga_wb",
+	  "amiga_dp",
+	  "c64",
+	  "spectrum",
+	  "cga",
+	  "apple2",
+	  "pocket",
+	  "gblight",
+	  "virtualboy",
+	  "amber",
+	  "phosphor",
+	  "plasma",
+	  "rainbow",
+	  "acid",
+	  "fuchsia",
+	  "sunset",
+	  "ocean",
+	  "forest",
+	  "lava",
+	  "ice",
+	  "candy",
+	  "vapor",
+	  "neon",
+	  "toxic",
+	  "sepia",
+	  "noir",
+	  "cherry",
+	  "midnight",
+	  "gold",
+	  "mint",
+	  "grape",
+	}
+
+	local function setOption(key, value)
+	  local manager = ManagerState.new(game)
+	  manager:setOption("gen1-better-menus", key, value)
+	end
+
+	local paletteState = {
+	  game = game,
+	  index = 1,
+	  scroll = 0,
+	  isOpaque = false,
+	}
+
+	local rows = {
+	  {
+		label = "MENU PALETTE",
+		value = function()
+		  local current = activeMod.options:get("palette")
+
+		  for i, id in ipairs(paletteChoices) do
+			if id == current then
+			  return tostring(i)
+			end
+		  end
+
+		  return "1"
+		end,
+		step = function(_, dir)
+		  local current = activeMod.options:get("palette")
+		  local index = 1
+
+		  for i, id in ipairs(paletteChoices) do
+			if id == current then
+			  index = i
+			  break
+			end
+		  end
+
+		  index = index + dir
+
+		  if index < 1 then
+			index = #paletteChoices
+		  elseif index > #paletteChoices then
+			index = 1
+		  end
+
+		  setOption("palette", paletteChoices[index])
+		  return true
+		end,
+	  },
+
+	  {
+		label = "INVERSE",
+		value = function()
+		  return activeMod.options:get("inverse") and "ON" or "OFF"
+		end,
+		step = function()
+		  setOption("inverse", not activeMod.options:get("inverse"))
+		  return true
+		end,
+	  },
+	}
+
+	function paletteState:uiSize()
+	  return UI_W, UI_H
+	end
+
+	function paletteState:sgbPalettes()
+	  return wholeWide()
+	end
+
+	function paletteState:draw()
+	  OptionRows.draw(game, rows, self.index, self.scroll, "B:DONE")
+	end
+
+	function paletteState:update()
+	  local input = game.input
+
+	  if input:wasPressed("up") then
+		self.index = self.index > 1 and self.index - 1 or #rows
+
+	  elseif input:wasPressed("down") then
+		self.index = self.index < #rows and self.index + 1 or 1
+
+	  elseif input:wasPressed("left") then
+		rows[self.index].step(game, -1)
+
+	  elseif input:wasPressed("right") then
+		rows[self.index].step(game, 1)
+
+	  elseif input:wasPressed("a") then
+		rows[self.index].step(game, 1)
+
+	  elseif input:wasPressed("b") then
+		game.stack:pop()
+		Screens.push(game, "StartMenu")
+	  end
+
+	  self.scroll = OptionRows.clampScroll(
+		self.index,
+		self.scroll,
+		#rows
+	  )
+	end
+
+	game.stack:push(paletteState)
+		end,
+	  })
+
+	  return items
+	end)
 
   installOptionsLayout()
   installOverworldScaleStability()
