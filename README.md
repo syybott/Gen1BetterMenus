@@ -6,13 +6,13 @@ Gen1BetterMenus expands Pokémon Gen 1's original interface for modern displays 
 
 The goal is not to redesign Gen 1 into a modern PC interface. It is to make widescreen Gen 1 feel like it was always supposed to look this way.
 
-Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the additional screen space and smaall UI QOL enhancements. 
+Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the additional screen space and small UI QOL enhancements. 
 
 > 🖥️ **Requires `BATTLE HUD: EXTENDED` to be enabled in Gen1Recomp if you are not using the portrait/og beta**
 
 ## ✨ Features
 
-- Faithful Gen 1-style frames, typography, spacing, and menu structure- Extended battle UI designed around Gen1Recomp's [`BATTLE HUD: EXTENDED`](https://github.com/bryanthaboi/gen1recomp/pull/1378)
+- Faithful Gen 1-style frames, typography, spacing, and menu structure
 - Widescreen Options and Settings screens
 - Modern PC interface
 - Enhanced battle information HUD
@@ -36,6 +36,7 @@ The mod is designed around the extended widescreen layout and will not display c
 ## ⚙️ Configuration
 **MENU PALETTE**  
 Select the palette used for menus and UI panels.
+
 **INVERSE**  
 Reverse the selected palette from light-to-dark into dark-to-light.
 
