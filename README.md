@@ -39,19 +39,7 @@ Select the palette used for menus and UI panels.
 
 **INVERSE**  
 Reverse the selected palette from light-to-dark into dark-to-light.
-
 Changes can be made directly through the Mod Manager or main options menu
-
-
-## 🧩 Compatibility
-Gen1BetterMenus currently targets:
-
-**Gen1Recomp `>= 0.1.99` and `< 2.0.0`**
-The mod is designed specifically for Gen1Recomp's widescreen rendering system.
-
-It is compatible with **Groovy Palette & Frames** and should generally coexist with mods that do not replace or substantially modify the same UI/menu rendering code. If you find mods that are incompatible and their license allows, please message me to discuss their integration. 
-
-Mods that independently redesign menus, battle UI, dialogue boxes, or other interface components may conflict visually or functionally.
 
 
 ## 🚧 Current Status
