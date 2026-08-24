@@ -831,6 +831,14 @@ local function installMenuLayout()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
 	    self.tx = self.tx + (UI_TW - 20)
+	    local step = self.rowStep or 2
+	    local neededTh = #items * step + 1
+	    if self.th and self.th < neededTh then
+	      self.th = neededTh
+	    end
+	    if self.ty and self.th and self.ty + self.th > UI_TH then
+	      self.ty = math.max(0, UI_TH - self.th)
+	    end
 	    self.isWideBattleLayout = function() return false end
 	    local drawMenu = self.draw
 	    self.isOpaque = false
