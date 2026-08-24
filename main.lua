@@ -299,6 +299,31 @@ local function isOptionRowsScreen(state)
       or sid:match("Settings$")
 end
 
+local function installModOptionsMarkerCompatibility()
+  local function propagate(game, id, inst)
+    if not inst or inst.isModOptions ~= nil then
+      return inst
+    end
+
+    local factory = Screens.get(game, id)
+    if factory and factory.isModOptions then
+      inst.isModOptions = true
+    end
+
+    return inst
+  end
+
+  local originalBuild = Screens.build
+  Screens.build = function(game, id, ...)
+    return propagate(game, id, originalBuild(game, id, ...))
+  end
+
+  local originalPush = Screens.push
+  Screens.push = function(game, id, ...)
+    return propagate(game, id, originalPush(game, id, ...))
+  end
+end
+
 local function installOverworldScaleStability()
   local originalDraw = Game.draw
   local originalUiScale = Renderer.uiScale
@@ -1968,6 +1993,7 @@ local paletteChoices = {
 	  return items
 	end)
 
+  installModOptionsMarkerCompatibility()
   installOptionsLayout()
   installOverworldScaleStability()
   installListLayout()
