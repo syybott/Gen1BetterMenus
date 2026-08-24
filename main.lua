@@ -1793,23 +1793,28 @@ return function(mod, menuColors)
   local frameGame
   local nicknameBackdrop
 
-  local function visibleTitle(game)
-    local top = game and game.stack and game.stack:top()
-    local states = game and game.stack and game.stack.states or {}
-    for i = 1, #states do
-      local title = states[i]
-      if getmetatable(title) == TitleState
-         and (top == title or (top and
-           (top.enhancedTitleMenu or top.enhancedTitleInfo))) then
-        return title
-      end
-    end
-    return false
-  end
+	local function visibleTitle(game)
+	  local top = game and game.stack and game.stack:top()
+	  local states = game and game.stack and game.stack.states or {}
+
+	  for i = 1, #states do
+		local title = states[i]
+
+	if getmetatable(title) == TitleState
+	   and (
+		 top == title
+		 or getmetatable(top) == OptionsMenu
+		 or (top and
+		   (top.enhancedTitleMenu or top.enhancedTitleInfo))
+	   ) then
+		  return title
+		end
+	  end
+
+	  return false
+	end
 
   mod.options:define({
-    { key = "battle_info", label = "BATTLE INFO", type = "toggle",
-	  default = true },
     { key = "palette", label = "MENU PALETTE", type = "choice",
       default = "soulsilver",
       choices = {
@@ -2104,13 +2109,23 @@ local paletteChoices = {
     if not (title and ctx and ctx.ww and ctx.wh) then
       return
     end
-    local sourceColors = YELLOW_TITLE_PIKACHU
-    if not title.yellowLayout then
-      local zones = title:sgbPalettes(frameGame)
-      sourceColors = zones and zones[1] and zones[1].colors or sourceColors
-    end
-    local titleColors = PaletteFX.effectiveColors(sourceColors)
-    local paper = titleColors and titleColors[1] or { 255, 255, 255 }
+   local top = frameGame and frameGame.stack and frameGame.stack:top()
+local paper
+
+if top and getmetatable(top) == OptionsMenu then
+  local menuColors = PaletteFX.effectiveColors(colors())
+  paper = menuColors and menuColors[1] or { 255, 255, 255 }
+else
+  local sourceColors = YELLOW_TITLE_PIKACHU
+
+  if not title.yellowLayout then
+    local zones = title:sgbPalettes(frameGame)
+    sourceColors = zones and zones[1] and zones[1].colors or sourceColors
+  end
+
+  local titleColors = PaletteFX.effectiveColors(sourceColors)
+  paper = titleColors and titleColors[1] or { 255, 255, 255 }
+end
     local r, green, b, a = love.graphics.getColor()
     love.graphics.setColor(
       paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
