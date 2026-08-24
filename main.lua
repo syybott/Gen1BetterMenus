@@ -1486,6 +1486,39 @@ local function installSupportingScreens()
 
     originalStatBoxDraw(self)
   end
+  
+  local originalSummaryDraw = SummaryMenu.draw
+
+SummaryMenu.draw = function(self)
+  originalSummaryDraw(self)
+
+  if self.sprite then
+    local pw, ph = self.sprite:getDimensions()
+    local py = math.max(0, 56 - ph)
+
+	local palette = PaletteFX.effectiveColors(colors())
+	local paper = palette and palette[1]
+
+	if paper then
+	  love.graphics.setColor(
+		paper[1] / 255,
+		paper[2] / 255,
+		paper[3] / 255,
+		1
+	  )
+
+	  love.graphics.rectangle("fill", 8, py, pw, ph)
+
+	  love.graphics.setColor(1, 1, 1, 1)
+	  love.graphics.draw(self.sprite, 8 + pw, py, 0, -1, 1)
+
+	  if self.spriteTrueColor then
+		PaletteFX.markTrueColor(8, py, pw, ph)
+	  end
+	end
+  end
+end
+  
   makeWideState(SummaryMenu)
   SummaryMenu.sgbPalettes = wholeWide
 end
