@@ -1357,10 +1357,13 @@ local function installSupportingScreens()
         local bar = PaletteFX.pal(game.data,
           PaletteFX.barPalName(hp, mon.stats.hp))
         if bar then
-          zones[#zones + 1] = {
-            colors = bar, x = x + 3 * 8, y = y + 16,
-            w = 7 * 8, h = 8,
-          }
+		zones[#zones + 1] = {
+		  colors = bar,
+		  x = x + 5 * 8,
+		  y = y + 19,
+		  w = 4 * 8,
+		  h = 2,
+		}
         end
       end
     end
