@@ -20,6 +20,7 @@ local PlayerPC = require("src.ui.PlayerPC")
 local PokedexMenu = require("src.ui.PokedexMenu")
 local PartyMenu = require("src.ui.PartyMenu")
 local TrainerCard = require("src.ui.TrainerCard")
+local DexEntryMenu = require("src.ui.DexEntryMenu")
 local NamingScreen = require("src.ui.NamingScreen")
 local SummaryMenu = require("src.ui.SummaryMenu")
 local TextBox = require("src.render.TextBox")
@@ -689,6 +690,14 @@ end
   PokedexMenu.sgbPalettes = wholeWide
 
   ListMenu.draw = function(self)
+    local states = self.game and self.game.stack and self.game.stack.states or {}
+
+    for i = 1, #states - 1 do
+      if states[i] == self
+          and getmetatable(states[i + 1]) == DexEntryMenu then
+        return
+      end
+    end
     sortBagFavorites(self)
     drawOuterFrame(self.title)
     if #self.items == 0 then
@@ -1313,6 +1322,64 @@ local function installDialogueLayout()
 end
 
 local function installSupportingScreens()
+
+	DexEntryMenu.sgbPalettes = function(self, game)
+	  local base = PaletteFX.pal(game.data, "BROWNMON")
+	  if not base then return nil end
+
+	  local offset = math.floor((UI_W - Renderer.WIDTH) / 2)
+
+	  return {
+	  -- Base Pokédex palette across the wide surface.
+	  PaletteFX.zone(base, 0, 0, UI_TW - 1, UI_TH - 1),
+
+	  -- Pokémon sprite palette.
+	  PaletteFX.zone(
+		PaletteFX.monPal(game.data, self.def and self.def.id),
+		offset / 8 + 1,
+		1,
+		offset / 8 + 8,
+		8
+	  ),
+
+	  -- Active menu palette on the Pokédex frame only.
+	  PaletteFX.zone(colors(), 9, 0, 28, 0),    -- top
+	  PaletteFX.zone(colors(), 9, 17, 28, 17),  -- bottom
+	  PaletteFX.zone(colors(), 9, 0, 9, 17),    -- left
+	  PaletteFX.zone(colors(), 28, 0, 28, 17),  -- right
+	  PaletteFX.zone(colors(), 9, 9, 28, 9),    -- middle divider
+	}
+	end
+
+	DexEntryMenu.uiSize = function()
+	  return UI_W, UI_H
+	end
+
+	DexEntryMenu.isWideBattleLayout = function()
+	  return false
+	end
+
+	DexEntryMenu.isOpaque = false
+	
+	local originalDexEntryDraw = DexEntryMenu.draw
+
+	DexEntryMenu.draw = function(self)
+	  local sx, sy, sw, sh = love.graphics.getScissor()
+
+	  -- The Dex renderer still inherits the classic 160px clip.
+	  -- Remove it while drawing the centered page.
+	  love.graphics.setScissor()
+
+	  love.graphics.push()
+	  love.graphics.translate((UI_W - Renderer.WIDTH) / 2, 0)
+	  originalDexEntryDraw(self)
+	  love.graphics.pop()
+
+	  if sx then
+		love.graphics.setScissor(sx, sy, sw, sh)
+	  end
+	end
+
   -- The classic trainer card is a panel over the field. Keeping the world in
   -- the visible stack replaces its black outer frame with the overworld.
   TrainerCard.isOpaque = false
