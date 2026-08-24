@@ -239,4 +239,6 @@ and it still renders incorrectly with Gen1BetterMenus, please report the issue w
 
 At that point it is likely a genuine compatibility issue rather than a screen-detection issue.
 
+
+
 Thanks for adding the marker and helping keep Gen1Recomp mods interoperable. 💚
