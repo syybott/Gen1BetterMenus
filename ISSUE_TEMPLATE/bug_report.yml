@@ -1,0 +1,103 @@
+name: Bug Report
+description: Report a problem with Gen1BetterMenus
+title: "[BUG] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        Please fill out every required field below. Reports without enough information to reproduce the issue may be closed until additional information is provided.
+
+  - type: input
+    id: mod-version
+    attributes:
+      label: Gen1BetterMenus version
+      description: Which version of Gen1BetterMenus are you using?
+      placeholder: "Example: v1.0.22"
+    validations:
+      required: true
+
+  - type: input
+    id: gen1recomp-version
+    attributes:
+      label: Gen1Recomp version
+      description: Which Gen1Recomp version/build are you using?
+      placeholder: "Example: v0.x.x or commit/build information"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Pokémon Red
+        - Pokémon Blue
+        - Pokémon Yellow
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe exactly what is wrong.
+      placeholder: Tell me what you saw, where it happened, and what looked or behaved incorrectly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Give exact steps so I can reproduce the issue.
+      placeholder: |
+        1. Launch Pokémon Red
+        2. Open ...
+        3. Select ...
+        4. Error occurs
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other installed mods
+      description: List every other enabled Gen1Recomp mod, or write "None".
+      placeholder: |
+        quality_of_life
+        gold_sprites
+        etc.
+    validations:
+      required: true
+
+  - type: upload
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Upload a screenshot showing the problem. If this is an error screen, include the entire error screen.
+    validations:
+      required: true
+      accept: ".png,.jpg,.jpeg,.webp"
+
+  - type: upload
+    id: error-log
+    attributes:
+      label: Error log
+      description: If the game generated lua-error.log, upload it here.
+    validations:
+      required: false
+      accept: ".log,.txt"
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am using the latest released version of Gen1BetterMenus.
+          required: true
+        - label: I searched existing issues and did not find this problem already reported.
+          required: true
