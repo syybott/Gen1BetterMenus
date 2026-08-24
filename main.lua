@@ -847,11 +847,17 @@ local function installMenuLayout()
       for _, item in ipairs(items) do
         widest = math.max(widest, #(Font.split(item.label or "")))
       end
-      opts.tw = math.max(10, widest + 3)
-      opts.tx, opts.ty = UI_TW - opts.tw, 0
+      opts.tw = 11
+	  opts.tx = UI_TW - opts.tw
+	  opts.ty = 0
+	  opts.itemY = 1
+	  opts.th = 17
       opts.anchor = "topright"
     end
     local self = originalNew(game, items, opts)
+	if opts.startCloses then
+	  self.tw = 11
+	end
 	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
@@ -1016,9 +1022,68 @@ end
       return
     end
   end
+  
+  if self.startCloses then
+    local originalLabels = {}
+
+    for i, item in ipairs(self.items) do
+      originalLabels[i] = item.label
+      item.label = truncate(item.label, 8)
+    end
+
+    local selectedLabel = originalLabels[self.index]
+
+    if selectedLabel then
+      local text = tostring(selectedLabel)
+	local spans = Font.split(text)
+	local chars = {}
+
+	for _, span in ipairs(spans) do
+	  chars[#chars + 1] = text:sub(span.from, span.to)
+	end
+
+if #chars > 8 then
+        if self.gen1BetterMenusMarqueeIndex ~= self.index then
+          self.gen1BetterMenusMarqueeIndex = self.index
+          self.gen1BetterMenusMarqueeStart = love.timer.getTime()
+        end
+
+        local loop = {}
+
+        for _, char in ipairs(chars) do
+          loop[#loop + 1] = char
+        end
+
+        loop[#loop + 1] = " "
+        loop[#loop + 1] = " "
+
+        local elapsed =
+          love.timer.getTime() - (self.gen1BetterMenusMarqueeStart or 0)
+
+        local offset = math.floor(elapsed / 0.20) % #loop
+        local visible = {}
+
+        for n = 1, 8 do
+          local pos = ((offset + n - 1) % #loop) + 1
+          visible[#visible + 1] = loop[pos]
+        end
+
+        self.items[self.index].label = table.concat(visible)
+      end
+    end
+
+    originalMenuDraw(self)
+
+    for i, item in ipairs(self.items) do
+      item.label = originalLabels[i]
+    end
+
+    return
+  end
 
   return originalMenuDraw(self)
- end
+end
+
 end
 
 local function installBattlePaletteIsolation()
