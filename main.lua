@@ -972,7 +972,7 @@ local function installMenuLayout()
     if top and top.titleUiBox
        and (top.enhancedTitleMenu or top.enhancedTitleInfo) then
       return {
-        PaletteFX.zone(PaletteFX.GRAYS, 0, 0, UI_TW - 1, UI_TH - 1),
+        PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1),
       }
     end
     local result = originalTitlePalettes(self, game)
@@ -2112,7 +2112,7 @@ local paletteChoices = {
    local top = frameGame and frameGame.stack and frameGame.stack:top()
 local paper
 
-if top and getmetatable(top) == OptionsMenu then
+if top and top ~= title then
   local menuColors = PaletteFX.effectiveColors(colors())
   paper = menuColors and menuColors[1] or { 255, 255, 255 }
 else
