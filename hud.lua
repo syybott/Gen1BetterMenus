@@ -709,7 +709,9 @@ end
       g.draw(layer, 0, 0)
       g.pop()
       pushed = false
-    end, debug.traceback)
+    end, function(err)
+    return tostring(err)
+  end)
 
     if pushed then pcall(g.pop) end
     if previous then g.setCanvas(previous) else g.setCanvas() end
@@ -816,7 +818,9 @@ end
         end
         local ok, err = xpcall(function()
           result = originalOverlay(battle, unpack(args))
-        end, debug.traceback)
+        end, function(err)
+		return tostring(err)
+		end)
         if nativeStagedOverlay then
           nativeStagedOverlayDepth = math.max(0,
             nativeStagedOverlayDepth - 1)
@@ -838,7 +842,11 @@ end
   local function withStagedGenderCapture(draw)
     stagedGenderCaptureDepth = stagedGenderCaptureDepth + 1
     local result
-    local ok, err = xpcall(function() result = draw() end, debug.traceback)
+    local ok, err = xpcall(function()
+      result = draw()
+	end, function(err)
+	  return tostring(err)
+	end)
     stagedGenderCaptureDepth = math.max(0, stagedGenderCaptureDepth - 1)
     if not ok then error(err, 0) end
     return result
@@ -966,7 +974,9 @@ end
         local layer
         local okLayer, layerErr = xpcall(function()
           layer = innerHudTexture(liveBattle, unpack(args))
-        end, debug.traceback)
+        end, function(err)
+		return tostring(err)
+		end)
         nativeStagedHudDepth = math.max(0, nativeStagedHudDepth - 1)
         if not okLayer then error(layerErr, 0) end
         return layer
