@@ -250,12 +250,12 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
     )
   end
 
-  if markColor ~= false then
+  if markColor ~= false and fill > 0 then
     PaletteFX.markTrueColor(
-      tx * 8,
-      ty * 8,
-      (segments + 3) * 8,
-      8
+      tx * 8 + 16,
+      ty * 8 + 3,
+      fill,
+      2
     )
   end
 end
@@ -428,19 +428,6 @@ local function renderWideEnemy(battle, fx)
   local battler = battle.enemy
   local enemyName = fitName(battler.name, 48)
 
-  local shader
-  local previousShader
-
-  if battle.extendedHUD and battle:extendedHUD() and menuColors then
-    shader = PaletteFX.shader()
-    if shader then
-      previousShader = love.graphics.getShader
-        and love.graphics.getShader() or nil
-      PaletteFX.sendColors(shader, menuColors())
-      love.graphics.setShader(shader)
-    end
-  end
-
   love.graphics.setColor(0, 0, 0, 1)
   Font.drawBox(0, 0, 16, 4)
   Font.draw(enemyName, 8, 8)
@@ -451,11 +438,45 @@ local function renderWideEnemy(battle, fx)
     drawCaughtBall(battle, caughtBallX(enemyName, 8), 8)
   end
 
-  if shader then
-    love.graphics.setShader(previousShader)
-  end
+drawNativeHP(battle, battle.enemy, 1, 2, nil, 11, false)
 
-drawNativeHP(battle, battle.enemy, 1, 2, nil, 11)
+  -- HudTiles' HP label/bar row does not follow the same downstream glyph
+  -- path as Font text. Finish that row with the menu palette here, then mark
+  -- the completed pixels so composition cannot remap them a second time.
+  local rowShader = PaletteFX.shader()
+  local previousShader = love.graphics.getShader()
+  local rowSx, rowSy, rowSw, rowSh = love.graphics.getScissor()
+  love.graphics.setScissor(8 + hudShake, 16, 112, 8)
+  local rowColors = PaletteFX.effectiveColors(menuColors())
+  local rowBackground = rowColors and rowColors[1] or { 255, 255, 255 }
+  love.graphics.setShader()
+  love.graphics.setColor(rowBackground[1] / 255, rowBackground[2] / 255,
+    rowBackground[3] / 255, 1)
+  love.graphics.rectangle("fill", 8, 16, 112, 8)
+  if rowShader then
+    PaletteFX.sendColors(rowShader, menuColors())
+    love.graphics.setShader(rowShader)
+  end
+  drawNativeHP(battle, battle.enemy, 1, 2, nil, 11, false)
+  if rowShader then love.graphics.setShader(previousShader) end
+  if rowSx then
+    love.graphics.setScissor(rowSx, rowSy, rowSw, rowSh)
+  else
+    love.graphics.setScissor()
+  end
+  PaletteFX.markTrueColor(8 + hudShake, 16, 112, 8)
+
+  -- Repaint only the native bar's two fill rows without the menu shader.
+  -- Clipping the same HudTiles output used by the player keeps its green
+  -- shade exact instead of approximating it with a hand-painted rectangle.
+  local sx, sy, sw, sh = love.graphics.getScissor()
+  love.graphics.setScissor(24 + hudShake, 19, 88, 2)
+  drawNativeHP(battle, battle.enemy, 1, 2, nil, 11, false)
+  if sx then
+    love.graphics.setScissor(sx, sy, sw, sh)
+  else
+    love.graphics.setScissor()
+  end
 
 	if hudShake ~= 0 then
 	  love.graphics.pop()
@@ -467,19 +488,6 @@ local function renderWidePlayer(battle)
 
   local battler = battle.player
 
-  local shader
-  local previousShader
-
-  if battle.extendedHUD and battle:extendedHUD() and menuColors then
-    shader = PaletteFX.shader()
-    if shader then
-      previousShader = love.graphics.getShader
-        and love.graphics.getShader() or nil
-      PaletteFX.sendColors(shader, menuColors())
-      love.graphics.setShader(shader)
-    end
-  end
-
   love.graphics.setColor(0, 0, 0, 1)
   Font.drawBox(23, 7, 15, 6)
   Font.draw(fitName(battler.name, 40), 192, 64)
@@ -488,10 +496,6 @@ local function renderWidePlayer(battle)
 
   Font.draw(("%3d/%3d"):format(shownHP(battler), battler.mon.stats.hp),
     240, 80)
-
-  if shader then
-    love.graphics.setShader(previousShader)
-  end
 
   drawNativeHP(battle, battler, 24, 9, nil, 11)
 
@@ -574,6 +578,7 @@ end
 	end
 
 	renderWidePlayer(battle)
+	anchorHud(battle, 184, 56, 120, 48, "bottom")
 
 	love.graphics.pop()
 	end
@@ -628,7 +633,7 @@ end
 		  and originalEndBattleHUDPass then
 		renderer.endBattleHUDPass = function(self, previous)
 		  renderWideEnemy(battle, battle.fx)
-		  anchorWideHud(battle, 0, 0, 152, 32, "top")
+		  anchorWideHud(battle, 0, 0, 128, 32, "top")
 		  return originalEndBattleHUDPass(self, previous)
 		end
 	  end
@@ -1078,20 +1083,39 @@ BattleState.sgbPalettes = function(battle, ...)
 
   local palette = menuColors()
 
-	if not (battle.extendedHUD and battle:extendedHUD()) then
-	  zones[#zones + 1] = PaletteFX.zone(
-		palette,
-		0, 0,
-		17, 3
-	  )
-	end
-
 	if playerVisible(battle) then
 	  zones[#zones + 1] = PaletteFX.zone(
 		palette,
 		23, 7,
 		37, 12
 	  )
+	end
+
+	-- The HUD panels use the menu palette, but HP and EXP fills are semantic
+	-- colors. Re-blit only those two-pixel fills without the shade shader so
+	-- inverse mode cannot turn green/blue into a menu shade. Keeping the
+	-- opt-out this narrow also lets the custom XP X follow the menu palette.
+	local function trueColorFill(battler, x, y, segments)
+	  local hp = shownHP(battler)
+	  local maxHp = battler.mon.stats.hp
+	  local px = maxHp > 0 and math.floor(hp * segments * 8 / maxHp) or 0
+	  if hp > 0 then px = math.max(1, px) end
+	  if px > 0 then
+		zones[#zones + 1] = { colors = false, x = x, y = y, w = px, h = 2 }
+	  end
+	end
+
+	if enemyVisible(battle) then
+	  trueColorFill(battle.enemy, 24, 19, 11)
+	end
+	if playerVisible(battle) then
+	  trueColorFill(battle.player, 208, 75, 11)
+	  local _, _, ratio = expProgress(battle.data, battle.player.mon)
+	  local px = math.floor(88 * math.max(0, math.min(1, ratio or 0)) + 0.5)
+	  if ratio and ratio > 0 then px = math.max(1, px) end
+	  if px > 0 then
+		zones[#zones + 1] = { colors = false, x = 208, y = 91, w = px, h = 2 }
+	  end
 	end
 
 	if levelUpStatBoxVisible(battle) then
