@@ -101,3 +101,5 @@ body:
           required: true
         - label: I searched existing issues and did not find this problem already reported.
           required: true
+        - label: I am in widescreen mode with extended battle ui selected in the options. 
+          required: true
