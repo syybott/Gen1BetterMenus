@@ -497,7 +497,7 @@ local function renderWidePlayer(battle)
   Font.draw(("%3d/%3d"):format(shownHP(battler), battler.mon.stats.hp),
     240, 80)
 
-  drawNativeHP(battle, battler, 24, 9, nil, 11)
+  drawNativeHP(battle, battler, 24, 9, nil, 11, false)
 
   drawExpProgress(battle, battler, 192, 88, 96, 98)
 end
