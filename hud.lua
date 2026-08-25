@@ -196,7 +196,7 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
   -- Use the same native HP bar shell
   local tx = math.floor(x / 8)
   local ty = math.floor(y / 8)
-  local segments = 10
+  local segments = 11
 
   local fakeMax = 48
   local fakeHp = math.floor(fakeMax * ratio + 0.5)
