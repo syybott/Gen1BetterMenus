@@ -445,7 +445,7 @@ local function renderWideEnemy(battle, fx)
   Font.drawBox(0, 0, 16, 4)
   Font.draw(enemyName, 8, 8)
   drawLevel(battler, 88, 8)
-  drawStatusAfterLevel(battle, battler, 96, 8, 144)
+  drawStatus(battle, battler, 88, 8)
 
   if isCaught(battle, battle.enemy) then
     drawCaughtBall(battle, caughtBallX(enemyName, 8), 8)
