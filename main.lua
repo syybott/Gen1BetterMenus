@@ -1385,6 +1385,19 @@ local function installSupportingScreens()
   TrainerCard.isOpaque = false
   TrainerCard.sgbPalettes = wholeWide
 
+  local function clearWideBattleHudTrueColor()
+    local rects = PaletteFX.trueColorRects("ui")
+    for i = #rects, 1, -1 do
+      local rect = rects[i]
+      local enemyHP = rect.x == 8 and rect.y == 16 and rect.w == 112 and rect.h == 8
+      local playerHP = rect.x == 192 and rect.y == 72 and rect.w == 112 and rect.h == 8
+      local playerExp = rect.x == 192 and rect.y == 88 and rect.w == 104 and rect.h == 8
+      if enemyHP or playerHP or playerExp then
+        table.remove(rects, i)
+      end
+    end
+  end
+
   local originalNamingNew = NamingScreen.new
   NamingScreen.new = function(game, opts)
     local self = originalNamingNew(game, opts)
@@ -1419,6 +1432,7 @@ local function installSupportingScreens()
         love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
         originalDraw(screen)
         love.graphics.pop()
+        clearWideBattleHudTrueColor()
       end
     elseif introNaming then
       -- Oak's held dialogue remains below this screen and would otherwise
