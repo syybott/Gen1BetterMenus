@@ -1052,32 +1052,35 @@ end
 	end
 
 if #chars > 8 then
-        if self.gen1BetterMenusMarqueeIndex ~= self.index then
-          self.gen1BetterMenusMarqueeIndex = self.index
-          self.gen1BetterMenusMarqueeStart = love.timer.getTime()
+        local marqueeEnabled = activeMod and activeMod.options:get("marquee_text") ~= false
+        if marqueeEnabled then
+          if self.gen1BetterMenusMarqueeIndex ~= self.index then
+            self.gen1BetterMenusMarqueeIndex = self.index
+            self.gen1BetterMenusMarqueeStart = love.timer.getTime()
+          end
+
+          local loop = {}
+
+          for _, char in ipairs(chars) do
+            loop[#loop + 1] = char
+          end
+
+          loop[#loop + 1] = " "
+          loop[#loop + 1] = " "
+
+          local elapsed =
+            love.timer.getTime() - (self.gen1BetterMenusMarqueeStart or 0)
+
+          local offset = math.floor(elapsed / 0.20) % #loop
+          local visible = {}
+
+          for n = 1, 8 do
+            local pos = ((offset + n - 1) % #loop) + 1
+            visible[#visible + 1] = loop[pos]
+          end
+
+          self.items[self.index].label = table.concat(visible)
         end
-
-        local loop = {}
-
-        for _, char in ipairs(chars) do
-          loop[#loop + 1] = char
-        end
-
-        loop[#loop + 1] = " "
-        loop[#loop + 1] = " "
-
-        local elapsed =
-          love.timer.getTime() - (self.gen1BetterMenusMarqueeStart or 0)
-
-        local offset = math.floor(elapsed / 0.20) % #loop
-        local visible = {}
-
-        for n = 1, 8 do
-          local pos = ((offset + n - 1) % #loop) + 1
-          visible[#visible + 1] = loop[pos]
-        end
-
-        self.items[self.index].label = table.concat(visible)
       end
     end
 
@@ -1898,10 +1901,23 @@ return function(mod, menuColors)
     return
   end
 
-  if mod.content.screens:get("BoxMenu") then
-    mod.content.screens:override("BoxMenu", screen)
+  local originalBoxMenu = mod.content.screens:get("BoxMenu")
+  local boxMenuWrapper = {
+    new = function(game, ...)
+      if activeMod and activeMod.options:get("modern_pc_ui") == true then
+        return screen.new(game, ...)
+      end
+      if originalBoxMenu and type(originalBoxMenu.new) == "function" then
+        return originalBoxMenu.new(game, ...)
+      end
+      return BoxMenu.new(game, ...)
+    end
+  }
+
+  if originalBoxMenu then
+    mod.content.screens:override("BoxMenu", boxMenuWrapper)
   else
-    mod.content.screens:register("BoxMenu", screen)
+    mod.content.screens:register("BoxMenu", boxMenuWrapper)
   end
   
     local hudSource, hudReadErr = mod:read("hud.lua")
@@ -2006,6 +2022,10 @@ return function(mod, menuColors)
       } },
     { key = "inverse", label = "INVERSE", type = "toggle",
       default = false },
+    { key = "modern_pc_ui", label = "MODERN PC UI", type = "toggle",
+      default = false },
+    { key = "marquee_text", label = "MARQUEE TEXT", type = "toggle",
+      default = true },
   })
   
     mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
@@ -2021,7 +2041,7 @@ return function(mod, menuColors)
     end
 
     table.insert(items, insertAt, {
-      label = Strings("MENU PALETTE"),
+      label = Strings("BetterMenus"),
       onSelect = function()
   
 local paletteChoices = {
@@ -2126,6 +2146,28 @@ local paletteChoices = {
 		end,
 		step = function()
 		  setOption("inverse", not activeMod.options:get("inverse"))
+		  return true
+		end,
+	  },
+
+	  {
+		label = "MODERN PC UI",
+		value = function()
+		  return activeMod.options:get("modern_pc_ui") == true and "ON" or "OFF"
+		end,
+		step = function()
+		  setOption("modern_pc_ui", activeMod.options:get("modern_pc_ui") ~= true)
+		  return true
+		end,
+	  },
+
+	  {
+		label = "MARQUEE TEXT",
+		value = function()
+		  return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF"
+		end,
+		step = function()
+		  setOption("marquee_text", not (activeMod.options:get("marquee_text") ~= false))
 		  return true
 		end,
 	  },

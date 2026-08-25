@@ -1159,8 +1159,10 @@ return function(mod, genderExports, compatibility)
 	local footerW = layout.width - 8
 	local textW = Font.width(message)
 
-	if textW <= footerW then
-	  drawCentered(message, layout.width / 2, FOOTER_Y + 1,
+	local marqueeEnabled = mod and mod.options and mod.options:get("marquee_text") ~= false
+
+	if textW <= footerW or not marqueeEnabled then
+	  drawCentered(fitText(message, footerW), layout.width / 2, FOOTER_Y + 1,
 		footerW, WHITE)
 	else
 	  local gap = 24
