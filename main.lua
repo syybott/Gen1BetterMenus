@@ -1599,7 +1599,7 @@ local function installSupportingScreens()
       local w, h = parent:uiSize()
       if w and w > Renderer.WIDTH then
         self.uiSize = function() return w, h end
-        self.isWideBattleLayout = function() return false end
+        self.isWideBattleLayout = function() return true end
         self.gen1BetterMenusWide = true
       end
     end

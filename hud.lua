@@ -271,7 +271,15 @@ end
     return true
   end
 
+  local function levelUpStatBoxVisible(battle)
+    local stack = battle and battle.game and battle.game.stack
+    local top = stack and stack:top()
+    return top and getmetatable(top) == BattleState.StatBox
+      and top.gen1BetterMenusWide
+  end
+
   local function playerVisible(battle)
+    if levelUpStatBoxVisible(battle) then return false end
     return battle.player ~= nil and not battle.safari and not battle.demo
       and not battle.showPlayerBack
   end
@@ -1083,6 +1091,14 @@ BattleState.sgbPalettes = function(battle, ...)
 		palette,
 		23, 7,
 		37, 12
+	  )
+	end
+
+	if levelUpStatBoxVisible(battle) then
+	  zones[#zones + 1] = PaletteFX.zone(
+		palette,
+		27, 2,
+		37, 11
 	  )
 	end
 
