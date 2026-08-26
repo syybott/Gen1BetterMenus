@@ -6,7 +6,29 @@ return function(mod, menuColors)
   local BattleState = require("src.battle.BattleState")
   local WideBattle = require("src.battle.WideBattle")
 
-  local EXP_BLUE = { 42 / 255, 106 / 255, 208 / 255, 1 }
+  local EXP_GLINT = { 118 / 255, 190 / 255, 1, 1 }
+  local EXP_GLINT_FRAMES = 14
+  local EXP_BURST_FRAMES = 20
+  local EXP_BURST_SPARKS = {
+    { -1.00,  0.00, 1 },
+    { -0.72, -0.72, 1 },
+    {  0.00, -1.00, 2 },
+    {  0.72, -0.72, 1 },
+    {  1.00,  0.00, 1 },
+    {  0.72,  0.72, 1 },
+    {  0.00,  1.00, 2 },
+    { -0.72,  0.72, 1 },
+  }
+  local xpStates = setmetatable({}, { __mode = "k" })
+
+  local function getBattleXpState(battle)
+    if not battle then return {} end
+    if not xpStates[battle] then
+      xpStates[battle] = {}
+    end
+    return xpStates[battle]
+  end
+
   local exposedStatuses = setmetatable({}, { __mode = "k" })
   local CAUGHT_ROW = { { hp = 1 } }
   local GENDER_MOD_ID = "gender_mod"
@@ -27,6 +49,27 @@ return function(mod, menuColors)
   local function setting()
     local ok, value = pcall(mod.options.get, mod.options, "battle_info")
     return not ok or value == nil or value == true
+  end
+
+  local function inversePalette()
+    local ok, value = pcall(mod.options.get, mod.options, "inverse")
+    return ok and value == true
+  end
+
+  local function clearInverseArtifacts(rects)
+    if not inversePalette() then return end
+    local colors = PaletteFX.effectiveColors(menuColors())
+    local c = colors and colors[1] or { 28, 51, 79 }
+    local r, g, b, a = love.graphics.getColor()
+    local shader = love.graphics.getShader()
+    love.graphics.setShader()
+    love.graphics.setColor(c[1] / 255, c[2] / 255, c[3] / 255, 1)
+    for _, rect in ipairs(rects) do
+      love.graphics.rectangle("fill", rect[1], rect[2], rect[3], rect[4])
+      PaletteFX.markTrueColor(rect[1], rect[2], rect[3], rect[4])
+    end
+    love.graphics.setShader(shader)
+    love.graphics.setColor(r, g, b, a)
   end
 
   local function wideLayout(battle)
@@ -94,6 +137,119 @@ return function(mod, menuColors)
     return current, needed, current / needed, false
   end
 
+  local function expPixelTarget(battle, maxPixels)
+    local mon = battle and battle.player and battle.player.mon
+    if not mon then return 0 end
+    local _, _, ratio = expProgress(battle.data, mon)
+    ratio = math.max(0, math.min(1, ratio or 0))
+    local pixels = math.floor(maxPixels * ratio + 0.5)
+    return ratio > 0 and math.max(1, pixels) or 0
+  end
+
+  local function approach(value, target)
+    if value == target then return value end
+    local distance = math.abs(target - value)
+    local step = math.max(1, math.ceil(distance / 6))
+    return value < target and math.min(target, value + step)
+      or math.max(target, value - step)
+  end
+
+  local function advanceExpDisplay(battle, maxPixels)
+    local state = getBattleXpState(battle)
+    local mon = battle and battle.player and battle.player.mon
+    local target = expPixelTarget(battle, maxPixels)
+    if state.owner ~= mon or state.shown == nil then
+      state.owner = mon
+      state.shown = target
+      state.level = mon and mon.level or 0
+      state.wraps = 0
+      state.stage = "steady"
+      state.glint = nil
+      state.burst = nil
+      state.frame = battle and battle.frame or 0
+      return state.shown, state
+    end
+
+    local frame = battle and battle.frame or 0
+    if state.frame == frame then return state.shown, state end
+    state.frame = frame
+
+    local level = mon and mon.level or state.level
+    if level > state.level then
+      state.wraps = state.wraps + level - state.level
+      state.stage = "finish"
+    elseif level < state.level then
+      state.wraps = 0
+      state.stage = "steady"
+      state.shown = target
+    end
+    state.level = level
+
+    if state.stage == "finish" then
+      state.shown = approach(state.shown, maxPixels)
+      if state.shown == maxPixels then
+        state.stage = "glint"
+        state.glint = 0
+        state.burst = 0
+      end
+    elseif state.stage == "glint" then
+      state.glint = state.glint + 1
+      if state.burst then
+        state.burst = state.burst + 1
+        if state.burst >= EXP_BURST_FRAMES then state.burst = nil end
+      end
+      if state.glint >= EXP_GLINT_FRAMES then
+        state.wraps = math.max(0, state.wraps - 1)
+        state.glint = nil
+        if mon and mon.level >= (battle.data.constants.levelCap or 100) then
+          state.shown = maxPixels
+          state.stage = "steady"
+        else
+          state.shown = 0
+          state.stage = state.wraps > 0 and "finish" or "settle"
+        end
+      end
+    elseif state.stage == "settle" then
+      state.shown = approach(state.shown, target)
+      if state.shown == target then state.stage = "steady" end
+    else
+      state.shown = approach(state.shown, target)
+    end
+    return state.shown, state
+  end
+
+  local function drawExpGlint(state, x, y, width, mark)
+    if not (state and state.stage == "glint" and state.glint) then return end
+    local travel = width + 4
+    local left = x - 2 + math.floor(travel * state.glint
+      / math.max(1, EXP_GLINT_FRAMES - 1))
+    local clipX = math.max(x, left)
+    local clipRight = math.min(x + width, left + 4)
+    if clipRight <= clipX then return end
+    love.graphics.setShader()
+    love.graphics.setColor(EXP_GLINT)
+    love.graphics.rectangle("fill", clipX, y, clipRight - clipX, 2)
+    if mark then PaletteFX.markTrueColor(clipX, y, clipRight - clipX, 2) end
+  end
+
+  local function drawExpBurst(state, x, y, width, mark)
+    if not (state and state.burst) then return end
+    local age = state.burst
+    local centerX = x + width
+    local centerY = y + 1
+    local radius = 2 + math.floor(age / 2)
+    local fade = math.max(0, 1 - age / EXP_BURST_FRAMES)
+    love.graphics.setShader()
+    love.graphics.setColor(EXP_GLINT[1], EXP_GLINT[2], EXP_GLINT[3], fade)
+    for _, spark in ipairs(EXP_BURST_SPARKS) do
+      local px = math.floor(centerX + spark[1] * radius + 0.5)
+      local py = math.floor(centerY + spark[2] * radius + 0.5)
+      local size = spark[3]
+      love.graphics.rectangle("fill", px, py, size, size)
+      if mark then PaletteFX.markTrueColor(px, py, size, size) end
+    end
+  end
+
   local function shortNumber(value)
     if value < 1000 then return tostring(value) end
     if value < 1000000 then
@@ -112,6 +268,8 @@ return function(mod, menuColors)
 
   local function drawCaughtBall(battle, x, y)
     if type(battle.drawBallRow) ~= "function" then return end
+    x = x + 54
+    y = y - 1
     local g = love.graphics
     local sx, sy, sw, sh = g.getScissor()
     g.setScissor(x, y, 8, 8)
@@ -190,18 +348,17 @@ return function(mod, menuColors)
 local function drawExpProgress(battle, battler, x, y, width, barY,
   markColor)
 
-  local _, _, ratio = expProgress(battle.data, battler.mon)
-  ratio = math.max(0, math.min(1, ratio or 0))
-
-  -- Use the same native HP bar shell
   local tx = math.floor(x / 8)
   local ty = math.floor(y / 8)
   local segments = 11
+  local maxPixels = segments * 8
+
+  local fill, state = advanceExpDisplay(battle, maxPixels)
 
   local fakeMax = 48
-  local fakeHp = math.floor(fakeMax * ratio + 0.5)
+  local fakeHp = math.floor(fakeMax * (fill / maxPixels) + 0.5)
 
-  if ratio > 0 then
+  if fill > 0 then
     fakeHp = math.max(1, fakeHp)
   end
 
@@ -211,14 +368,10 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
   }, nil, false, 11)
 
   -- Replace HP green fill with EXP blue
-  local fill = math.floor(segments * 8 * ratio + 0.5)
-
-  if ratio > 0 then
-    fill = math.max(1, fill)
-  end
-
   if fill > 0 then
-    love.graphics.setColor(EXP_BLUE)
+    local fillShader = love.graphics.getShader()
+    love.graphics.setShader()
+    love.graphics.setColor(EXP_GLINT)
     love.graphics.rectangle(
       "fill",
       tx * 8 + 16,
@@ -226,6 +379,7 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
       fill,
       2
     )
+    love.graphics.setShader(fillShader)
   end
 
   -- Cover only the H portion of the stock HP label
@@ -258,6 +412,11 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
       2
     )
   end
+
+  drawExpGlint(state, tx * 8 + 16, ty * 8 + 3, maxPixels,
+    markColor ~= false)
+  drawExpBurst(state, tx * 8 + 16, ty * 8 + 3, maxPixels,
+    markColor ~= false)
 end
 
   local function enemyVisible(battle)
@@ -292,14 +451,18 @@ end
   -- animations are composited.
   local function drawClassicExpFill(battle)
     if not playerVisible(battle) then return end
-    local _, _, ratio = expProgress(battle.data, battle.player.mon)
-    ratio = math.max(0, math.min(1, ratio or 0))
-    local fill = math.floor(80 * ratio + 0.5)
-    if ratio > 0 then fill = math.max(1, fill) end
-    if fill <= 0 then return end
-    love.graphics.setColor(EXP_BLUE)
-    love.graphics.rectangle("fill", 64, 90, fill, 1)
-    PaletteFX.markTrueColor(64, 90, fill, 1)
+    local fill, state = advanceExpDisplay(battle, 80)
+    if fill <= 0 and state.stage ~= "glint" then return end
+    if fill > 0 then
+      local fillShader = love.graphics.getShader()
+      love.graphics.setShader()
+      love.graphics.setColor(EXP_GLINT)
+      love.graphics.rectangle("fill", 64, 90, fill, 1)
+      love.graphics.setShader(fillShader)
+      PaletteFX.markTrueColor(64, 90, fill, 1)
+    end
+    drawExpGlint(state, 64, 90, 80, true)
+    drawExpBurst(state, 64, 90, 80, true)
   end
 
   local function drawStagedSemanticHpFills(battle)
@@ -478,6 +641,8 @@ drawNativeHP(battle, battle.enemy, 1, 2, nil, 11, false)
     love.graphics.setScissor()
   end
 
+  clearInverseArtifacts({ { 8, 16, 1, 8 } })
+
 	if hudShake ~= 0 then
 	  love.graphics.pop()
 	end
@@ -499,7 +664,69 @@ local function renderWidePlayer(battle)
 
   drawNativeHP(battle, battler, 24, 9, nil, 11, false)
 
+  -- Match the enemy HP row: palette the label, track, and surrounding row,
+  -- then restore only the health fill as a semantic green/yellow/red color.
+  local hpRowShader = PaletteFX.shader()
+  if hpRowShader then
+    local previousShader = love.graphics.getShader()
+    local sx, sy, sw, sh = love.graphics.getScissor()
+    love.graphics.setScissor(192, 72, 104, 8)
+    local rowColors = PaletteFX.effectiveColors(menuColors())
+    local rowBackground = rowColors and rowColors[1] or { 255, 255, 255 }
+    love.graphics.setShader()
+    love.graphics.setColor(rowBackground[1] / 255, rowBackground[2] / 255,
+      rowBackground[3] / 255, 1)
+    love.graphics.rectangle("fill", 192, 72, 104, 8)
+    PaletteFX.sendColors(hpRowShader, menuColors())
+    love.graphics.setShader(hpRowShader)
+    drawNativeHP(battle, battler, 24, 9, nil, 11, false)
+    love.graphics.setShader(previousShader)
+    if sx then
+      love.graphics.setScissor(sx, sy, sw, sh)
+    else
+      love.graphics.setScissor()
+    end
+    PaletteFX.markTrueColor(192, 72, 104, 8)
+
+    local bx, by, bw, bh = love.graphics.getScissor()
+    love.graphics.setScissor(208, 75, 88, 2)
+    drawNativeHP(battle, battler, 24, 9, nil, 11, false)
+    if bx then
+      love.graphics.setScissor(bx, by, bw, bh)
+    else
+      love.graphics.setScissor()
+    end
+  end
+
   drawExpProgress(battle, battler, 192, 88, 96, 98)
+
+  clearInverseArtifacts({
+    { 192, 72, 1, 8 },
+    { 296, 75, 1, 2 },
+    { 208, 95, 88, 1 },
+  })
+
+  -- This panel is moved by the extended-HUD compositor, so a broad SGB zone
+  -- leaves a tinted copy behind at its source position. Repaint only the
+  -- bottom frame row through the menu shader; the remaining rows already
+  -- travel through the battle-HUD palette pass.
+  local borderShader = PaletteFX.shader()
+  if borderShader then
+    local previousShader = love.graphics.getShader()
+    local sx, sy, sw, sh = love.graphics.getScissor()
+    love.graphics.setScissor(184, 96, 120, 8)
+    PaletteFX.sendColors(borderShader, menuColors())
+    love.graphics.setShader(borderShader)
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.drawBox(23, 7, 15, 6)
+    love.graphics.setShader(previousShader)
+    if sx then
+      love.graphics.setScissor(sx, sy, sw, sh)
+    else
+      love.graphics.setScissor()
+    end
+    PaletteFX.markTrueColor(184, 96, 120, 8)
+  end
 end
 
 	local function anchorWideHud(battle, x, y, w, h, anchor)
@@ -575,10 +802,8 @@ end
 
 	if not battle:extendedHUD() then
 	  renderWideEnemy(battle, fx)
+	  renderWidePlayer(battle)
 	end
-
-	renderWidePlayer(battle)
-	anchorHud(battle, 184, 56, 120, 48, "bottom")
 
 	love.graphics.pop()
 	end
@@ -630,10 +855,12 @@ end
 
 	  if battle:extendedHUD()
 		  and renderer
-		  and originalEndBattleHUDPass then
+		and originalEndBattleHUDPass then
 		renderer.endBattleHUDPass = function(self, previous)
 		  renderWideEnemy(battle, battle.fx)
+		  renderWidePlayer(battle)
 		  anchorWideHud(battle, 0, 0, 128, 32, "top")
+		  anchorWideHud(battle, 184, 56, 120, 48, "bottom")
 		  return originalEndBattleHUDPass(self, previous)
 		end
 	  end
@@ -1083,7 +1310,10 @@ BattleState.sgbPalettes = function(battle, ...)
 
   local palette = menuColors()
 
-	if playerVisible(battle) then
+	-- Extended HUD panels are already composited through the battle-HUD
+	-- palette pass. Adding this source-canvas zone as well leaves a tinted
+	-- rectangle behind at the panel's pre-anchor position.
+	if playerVisible(battle) and not battle:extendedHUD() then
 	  zones[#zones + 1] = PaletteFX.zone(
 		palette,
 		23, 7,
@@ -1110,9 +1340,8 @@ BattleState.sgbPalettes = function(battle, ...)
 	end
 	if playerVisible(battle) then
 	  trueColorFill(battle.player, 208, 75, 11)
-	  local _, _, ratio = expProgress(battle.data, battle.player.mon)
-	  local px = math.floor(88 * math.max(0, math.min(1, ratio or 0)) + 0.5)
-	  if ratio and ratio > 0 then px = math.max(1, px) end
+	  local state = getBattleXpState(battle)
+	  local px = state.shown or 0
 	  if px > 0 then
 		zones[#zones + 1] = { colors = false, x = 208, y = 91, w = px, h = 2 }
 	  end
