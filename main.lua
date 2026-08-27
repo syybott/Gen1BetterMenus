@@ -350,7 +350,8 @@ local dynamicOptionRows =
   and type(top.index) == "number"
   and type(top.scroll) == "number"
 
-if isOptionRowsScreen(top) or dynamicOptionRows then
+if isOptionRowsScreen(top)
+    or (dynamicOptionRows and not top.gen1BetterMenusBagFavorites) then
   top.uiSize = function() return UI_W, UI_H end
   top.isWideBattleLayout = function() return false end
 end
@@ -600,6 +601,13 @@ end
 
 local function installListLayout()
   makeWideState(ListMenu)
+  ListMenu.uiSize = function(self)
+    if self.gen1BetterMenusBagFavorites then
+      return 304, 168
+    end
+
+    return UI_W, UI_H
+  end
   QuantityBox.uiSize = function() return UI_W, UI_H end
   QuantityBox.isWideBattleLayout = function() return false end
   local originalListMenuNew = ListMenu.new
@@ -662,6 +670,15 @@ ListMenu.new = function(game, ...)
 
   if bagItems then
     self.gen1BetterMenusBagFavorites = true
+
+    self.sgbPalettes = function()
+      return {
+        PaletteFX.zone(colors(), 0, 0, 37, 20)
+      }
+    end
+
+    self.rows = 8
+
     self.update = function(list, dt)
       if list.game.input:wasPressed("start") then
         local item = list.items[list.index]
@@ -674,6 +691,7 @@ ListMenu.new = function(game, ...)
       end
       originalListMenuUpdate(list, dt)
     end
+
     sortBagFavorites(self)
   end
 
@@ -699,7 +717,18 @@ end
       end
     end
     sortBagFavorites(self)
-    drawOuterFrame(self.title)
+    if self.gen1BetterMenusBagFavorites then
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", 0, 0, 304, 168)
+      drawFrameOnly(0, 0, 38, 21)
+      love.graphics.setColor(0, 0, 0, 1)
+
+      if self.title then
+        Font.draw(Strings(self.title), 16, 8)
+      end
+    else
+      drawOuterFrame(self.title)
+    end
     if #self.items == 0 then
       Font.draw(Strings("Nothing here."), 24, 64)
     end
@@ -763,6 +792,15 @@ end
         Font.draw(flat[i], 16, y)
         y = y + 8
       end
+    end
+
+    if self.gen1BetterMenusBagFavorites then
+      local hint = "[SELECT] SORT   [START] FAVORITE"
+      Font.draw(
+        hint,
+        math.floor((304 - Font.width(hint)) / 2),
+        152
+      )
     end
     love.graphics.setColor(1, 1, 1, 1)
   end
