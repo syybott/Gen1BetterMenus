@@ -12,15 +12,16 @@ Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the addit
 
 ## ✨ Features
 
-- Faithful Gen 1-style frames, typography, spacing, and menu structure
+- Faithful Gen 1-style frames, typography, and menu structure
 - Widescreen Options and Settings screens
-- Modern PC interface
-- Enhanced battle information HUD
+- Modern Bill's PC interface option
+- XP Bar and animation
+- Pokedex indicator for enemy Pokemon so you know what you have captured (Red/Blue options)
 - 40+ selectable menu palettes
 - Expanded Party, Pokédex, Summary, inventory, and list menus
 - Improved dialogue and choice-box layouts
-- Preservation of true-color battle graphics and semantic HP-bar colors
-
+- Use [SELECT] to pin your favorites on the start menu (SAVE YOUR CHANGES IN GAME OR THEY WILL RESET)
+- Use [START] to pin your favorites in your item bag
 
 ## 📦 Installation
 1. Download the latest `Gen1BetterMenus` ZIP
