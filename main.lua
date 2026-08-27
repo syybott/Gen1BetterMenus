@@ -1467,27 +1467,31 @@ local function installSupportingScreens()
 	  local base = PaletteFX.pal(game.data, "BROWNMON")
 	  if not base then return nil end
 
-	  local offset = math.floor((UI_W - Renderer.WIDTH) / 2)
-
 	  return {
-	  -- Base Pokédex palette across the wide surface.
-	  PaletteFX.zone(base, 0, 0, UI_TW - 1, UI_TH - 1),
+	  -- Native 160px zones; Game centers them with the classic entry page.
+	  -- Split the native-width base so Game centers it without invoking its
+	  -- full-width-zone expansion across both wide-screen margins.
+	  PaletteFX.zone(base, 0, 0, 9, 17),
+	  PaletteFX.zone(base, 10, 0, 19, 17),
 
 	  -- Pokémon sprite palette.
 	  PaletteFX.zone(
 		PaletteFX.monPal(game.data, self.def and self.def.id),
-		offset / 8 + 1,
 		1,
-		offset / 8 + 8,
+		1,
+		8,
 		8
 	  ),
 
 	  -- Active menu palette on the Pokédex frame only.
-	  PaletteFX.zone(colors(), 9, 0, 28, 0),    -- top
-	  PaletteFX.zone(colors(), 9, 17, 28, 17),  -- bottom
-	  PaletteFX.zone(colors(), 9, 0, 9, 17),    -- left
-	  PaletteFX.zone(colors(), 28, 0, 28, 17),  -- right
-	  PaletteFX.zone(colors(), 9, 9, 28, 9),    -- middle divider
+	  PaletteFX.zone(colors(), 0, 0, 9, 0),     -- top-left
+	  PaletteFX.zone(colors(), 10, 0, 19, 0),   -- top-right
+	  PaletteFX.zone(colors(), 0, 17, 9, 17),   -- bottom-left
+	  PaletteFX.zone(colors(), 10, 17, 19, 17), -- bottom-right
+	  PaletteFX.zone(colors(), 0, 0, 0, 17),    -- left
+	  PaletteFX.zone(colors(), 19, 0, 19, 17),  -- right
+	  PaletteFX.zone(colors(), 0, 9, 9, 9),     -- divider-left
+	  PaletteFX.zone(colors(), 10, 9, 19, 9),   -- divider-right
 	}
 	end
 
@@ -1499,7 +1503,7 @@ local function installSupportingScreens()
 	  return false
 	end
 
-	DexEntryMenu.isOpaque = false
+	DexEntryMenu.isOpaque = true
 	
 	local originalDexEntryDraw = DexEntryMenu.draw
 
@@ -1510,10 +1514,7 @@ local function installSupportingScreens()
 	  -- Remove it while drawing the centered page.
 	  love.graphics.setScissor()
 
-	  love.graphics.push()
-	  love.graphics.translate((UI_W - Renderer.WIDTH) / 2, 0)
 	  originalDexEntryDraw(self)
-	  love.graphics.pop()
 
 	  if sx then
 		love.graphics.setScissor(sx, sy, sw, sh)
