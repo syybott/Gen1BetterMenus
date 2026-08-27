@@ -368,6 +368,13 @@ local function installOverworldScaleStability()
   Game.draw = function(self)
     local states = self.stack and self.stack.states or {}
     local top = self.stack and self.stack:top()
+	local below = states[#states - 1]
+	if top and getmetatable(top) == Menu
+	    and below and below.gen1BetterMenusBagFavorites then
+	  top.gen1BetterMenusBagSubmenu = true
+	  top.uiSize = function() return below:uiSize() end
+	  top.sgbPalettes = below.sgbPalettes
+	end
 	local sid = top and type(top.screenId) == "string"
   and top.screenId:lower() or ""
 
@@ -378,7 +385,9 @@ local dynamicOptionRows =
   and type(top.scroll) == "number"
 
 if isOptionRowsScreen(top)
-    or (dynamicOptionRows and not top.gen1BetterMenusBagFavorites) then
+    or (dynamicOptionRows
+      and not top.gen1BetterMenusBagFavorites
+      and not top.gen1BetterMenusBagSubmenu) then
   top.uiSize = function() return UI_W, UI_H end
   top.isWideBattleLayout = function() return false end
 end
@@ -1066,6 +1075,7 @@ local function installMenuLayout()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
 	    if parent.gen1BetterMenusBagFavorites then
+	      self.gen1BetterMenusBagSubmenu = true
 	      self.uiSize = function() return parent:uiSize() end
 	      self.sgbPalettes = parent.sgbPalettes
 	    end
