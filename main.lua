@@ -814,6 +814,56 @@ local function installMenuLayout()
   local originalTitleDraw = TitleState.draw
   local originalTitlePalettes = TitleState.sgbPalettes
 
+  local function startMenuFavorites(save)
+    save.gen1BetterMenusStartFavorites =
+      save.gen1BetterMenusStartFavorites or {}
+    return save.gen1BetterMenusStartFavorites
+  end
+
+  local function startMenuKey(item)
+    return tostring(item and item.label or "")
+  end
+
+  local function sortStartFavorites(menu)
+    if not menu.gen1BetterMenusStartFavorites then return end
+
+    local selected = menu.items[menu.index]
+    local favorites = startMenuFavorites(menu.game.save)
+    local rank = menu.gen1BetterMenusStartRank or {}
+
+    table.sort(menu.items, function(a, b)
+      local ak = startMenuKey(a)
+      local bk = startMenuKey(b)
+
+      local af = favorites[ak] == true
+      local bf = favorites[bk] == true
+
+      if af ~= bf then
+        return af
+      end
+
+      return (rank[ak] or math.huge) < (rank[bk] or math.huge)
+    end)
+
+    if selected then
+      for i, item in ipairs(menu.items) do
+        if item == selected then
+          menu.index = i
+          break
+        end
+      end
+    end
+  end
+
+  local function drawStartHeart(x, y)
+    love.graphics.rectangle("fill", x + 1, y + 1, 2, 1)
+    love.graphics.rectangle("fill", x + 4, y + 1, 2, 1)
+    love.graphics.rectangle("fill", x, y + 2, 7, 2)
+    love.graphics.rectangle("fill", x + 1, y + 4, 5, 1)
+    love.graphics.rectangle("fill", x + 2, y + 5, 3, 1)
+    love.graphics.rectangle("fill", x + 3, y + 6, 1, 1)
+  end
+
   local function colorizeYellowPikachu(game, source)
     local logo = PaletteFX.effectiveColors(YELLOW_TITLE_LOGO)
     local pika = PaletteFX.effectiveColors(YELLOW_TITLE_PIKACHU)
@@ -903,9 +953,18 @@ local function installMenuLayout()
       opts.anchor = nil
     end
     local self = originalNew(game, items, opts)
-	if opts.startCloses then
-	  self.tw = 11
-	end
+
+    if opts.startCloses then
+      self.tw = 11
+      self.gen1BetterMenusStartFavorites = true
+      self.gen1BetterMenusStartRank = {}
+
+      for i, item in ipairs(self.items) do
+        self.gen1BetterMenusStartRank[startMenuKey(item)] = i
+      end
+
+      sortStartFavorites(self)
+    end
 	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
@@ -964,8 +1023,29 @@ local function installMenuLayout()
 
   Menu.update = function(self, dt)
     local titleMenu = self.enhancedTitleMenu
+
+    if self.gen1BetterMenusStartFavorites
+        and self.game.input:wasPressed("select") then
+      local item = self.items[self.index]
+
+      if item then
+        local favorites = startMenuFavorites(self.game.save)
+        local key = startMenuKey(item)
+
+        favorites[key] = not favorites[key] or nil
+
+        require("src.core.Sound").play(self.game.data, "Swap")
+        sortStartFavorites(self)
+      end
+
+      return
+    end
+
     originalUpdate(self, dt)
-    if titleMenu then patchContinueInfo(self) end
+
+    if titleMenu then
+      patchContinueInfo(self)
+    end
   end
 
   TitleState.openMenu = function(self)
@@ -1125,10 +1205,28 @@ if #chars > 8 then
 
     originalMenuDraw(self)
 
+    local favorites = startMenuFavorites(self.game.save)
+    local cursorX = (self.tx + 1) * 8
+    local itemY = self.itemY or 1
+    local rowStep = self.rowStep or 2
+    local scroll = self.scroll or 0
+
+    love.graphics.setColor(0, 0, 0, 1)
+
     for i, item in ipairs(self.items) do
       item.label = originalLabels[i]
+
+      local row = i - scroll
+
+      if row >= 1 and row <= 8
+          and i ~= self.index
+          and favorites[startMenuKey(item)] then
+        local y = (self.ty + itemY + (row - 1) * rowStep) * 8
+        drawStartHeart(cursorX, y)
+      end
     end
 
+    love.graphics.setColor(1, 1, 1, 1)
     return
   end
 
