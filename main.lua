@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.27
+-- Gen1BetterMenus 1.0.28
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1659,11 +1659,23 @@ SummaryMenu.draw = function(self)
 	  love.graphics.rectangle("fill", 8, py, pw, ph)
 
 	  love.graphics.setColor(1, 1, 1, 1)
+
+	  local monPal = self.mon
+	    and PaletteFX.monPal(self.game.data, self.mon.species)
+	  local shader = monPal and PaletteFX.shader()
+
+	  if shader then
+	    PaletteFX.sendColors(shader, monPal)
+	    love.graphics.setShader(shader)
+	  end
+
 	  love.graphics.draw(self.sprite, 8 + pw, py, 0, -1, 1)
 
-	  if self.spriteTrueColor then
-		PaletteFX.markTrueColor(8, py, pw, ph)
+	  if shader then
+	    love.graphics.setShader()
 	  end
+
+	  PaletteFX.markTrueColor(8, py, pw, ph)
 	end
   end
 end
