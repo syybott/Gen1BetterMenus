@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.29
+-- Gen1BetterMenus 1.0.28
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -39,6 +39,33 @@ local UI_W, UI_H = 304, 144
 local UI_TW, UI_TH = UI_W / 8, UI_H / 8
 local TITLE_PANEL_TW = 13
 local TITLE_INFO_TH = 10
+
+-- The stock vertical border glyph sits one pixel left of the corner stems.
+-- Repaint only the repeated left edge one game pixel to the right; corners
+-- and the other three edges retain the engine's original placement.
+if not Font.gen1BetterMenusLeftBorderFix then
+  local originalDrawBox = Font.drawBox
+  Font.drawBox = function(tx, ty, tw, th, fill)
+    originalDrawBox(tx, ty, tw, th, fill)
+    if th <= 2 then return end
+
+    local r, g, b, a = love.graphics.getColor()
+    if type(fill) == "table" and fill[1] and fill[2] and fill[3] then
+      love.graphics.setColor(fill[1] / 255, fill[2] / 255,
+        fill[3] / 255, 1)
+    else
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    love.graphics.rectangle("fill", tx * 8, (ty + 1) * 8,
+      8, (th - 2) * 8)
+    love.graphics.setColor(r, g, b, a)
+
+    for j = 1, th - 2 do
+      Font.drawCode(Font.BORDER.v, tx * 8 + 1, (ty + j) * 8)
+    end
+  end
+  Font.gen1BetterMenusLeftBorderFix = true
+end
 
 local function centeredTitlePanel(th)
   return math.floor((UI_TW - TITLE_PANEL_TW) / 2),
@@ -495,7 +522,7 @@ local function drawFrameOnly(tx, ty, tw, th)
     Font.drawCode(B.h, (tx + i) * 8, (ty + th - 1) * 8)
   end
   for j = 1, th - 2 do
-    Font.drawCode(B.v, tx * 8, (ty + j) * 8)
+    Font.drawCode(B.v, tx * 8 + 1, (ty + j) * 8)
     Font.drawCode(B.v, (tx + tw - 1) * 8, (ty + j) * 8)
   end
 end
@@ -2319,53 +2346,6 @@ return function(mod, menuColors)
   
     mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
     items = next(game, items)
-
-    -- Change QUIT to close the application, then add RESTART below it.
-    for i, item in ipairs(items) do
-      if tostring(item.label) == "QUIT" then
-        item.onSelect = function()
-          local TextBox = require("src.render.TextBox")
-
-          game.stack:push(TextBox.new(
-            game,
-            Strings("QUIT THE GAME?"),
-            nil,
-            {
-              defaultNo = true,
-              choice = function(yes)
-                if yes then
-                  pcall(love.filesystem.write, "relaunch_to_launcher.txt", "1")
-                  require("src.core.HostShell").restart()
-                end
-              end,
-            }
-          ))
-        end
-
-        table.insert(items, i + 1, {
-          label = Strings("RESTART"),
-          onSelect = function()
-            local TextBox = require("src.render.TextBox")
-
-            game.stack:push(TextBox.new(
-              game,
-              Strings("RETURN TO MAIN\nMENU?"),
-              nil,
-              {
-                defaultNo = true,
-                choice = function(yes)
-                  if yes then
-                    game:returnToTitle()
-                  end
-                end,
-              }
-            ))
-          end,
-        })
-
-        break
-      end
-    end
 
     local insertAt = #items + 1
 
