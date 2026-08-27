@@ -641,7 +641,7 @@ drawNativeHP(battle, battle.enemy, 1, 2, nil, 11, false)
     love.graphics.setScissor()
   end
 
-  clearInverseArtifacts({ { 8, 16, 1, 8 } })
+  clearInverseArtifacts({ { 7, 16, 1, 8 } })
 
 	if hudShake ~= 0 then
 	  love.graphics.pop()
@@ -698,35 +698,64 @@ local function renderWidePlayer(battle)
     end
   end
 
+  -- Preserve the player HP bar's white right endcap as one continuous edge.
+  -- Registering the cap explicitly prevents the scaled composite from adding
+  -- a one-pixel dark U on its left, top, and bottom sides.
+  do
+    local colors = PaletteFX.effectiveColors(menuColors())
+    local white = colors and colors[4] or { 248, 248, 248 }
+    local r, g, b, a = love.graphics.getColor()
+    local shader = love.graphics.getShader()
+    love.graphics.setShader()
+    love.graphics.setColor(white[1] / 255, white[2] / 255,
+      white[3] / 255, 1)
+    love.graphics.rectangle("fill", 296, 75, 1, 2)
+    PaletteFX.markTrueColor(296, 75, 1, 2)
+    love.graphics.setShader(shader)
+    love.graphics.setColor(r, g, b, a)
+  end
+
   drawExpProgress(battle, battler, 192, 88, 96, 98)
 
+  -- Keep the XP bar's left endcap white through the scaled HUD composite.
+  -- The stock cap ends at x=207; explicitly registering its inner edge avoids
+  -- a one-pixel background seam without extending the blue fill into the cap.
+  do
+    local colors = PaletteFX.effectiveColors(menuColors())
+    local white = colors and colors[4] or { 248, 248, 248 }
+    local r, g, b, a = love.graphics.getColor()
+    local shader = love.graphics.getShader()
+    love.graphics.setShader()
+    love.graphics.setColor(white[1] / 255, white[2] / 255,
+      white[3] / 255, 1)
+    love.graphics.rectangle("fill", 207, 91, 1, 2)
+    PaletteFX.markTrueColor(207, 91, 1, 2)
+    love.graphics.setShader(shader)
+    love.graphics.setColor(r, g, b, a)
+  end
+
+  -- Remove the stock frame rule between the XP meter and the detached
+  -- bottom border.  This canvas already contains final palette colors here;
+  -- registering a one-row true-colour rect creates a scaled re-blit seam.
+  if inversePalette() then
+    local r, g, b, a = love.graphics.getColor()
+    local shader = love.graphics.getShader()
+    love.graphics.setShader()
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 189, 95, 107, 1)
+    love.graphics.rectangle("fill", 189, 98, 107, 1)
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", 298, 97, 1, 2)
+    love.graphics.setShader(shader)
+    love.graphics.setColor(r, g, b, a)
+  end
+
   clearInverseArtifacts({
-    { 192, 72, 1, 8 },
-    { 296, 75, 1, 2 },
-    { 208, 95, 88, 1 },
+    { 191, 72, 1, 8 },
+    { 296, 72, 1, 3 },
+    { 296, 77, 1, 3 },
   })
 
-  -- This panel is moved by the extended-HUD compositor, so a broad SGB zone
-  -- leaves a tinted copy behind at its source position. Repaint only the
-  -- bottom frame row through the menu shader; the remaining rows already
-  -- travel through the battle-HUD palette pass.
-  local borderShader = PaletteFX.shader()
-  if borderShader then
-    local previousShader = love.graphics.getShader()
-    local sx, sy, sw, sh = love.graphics.getScissor()
-    love.graphics.setScissor(184, 96, 120, 8)
-    PaletteFX.sendColors(borderShader, menuColors())
-    love.graphics.setShader(borderShader)
-    love.graphics.setColor(0, 0, 0, 1)
-    Font.drawBox(23, 7, 15, 6)
-    love.graphics.setShader(previousShader)
-    if sx then
-      love.graphics.setScissor(sx, sy, sw, sh)
-    else
-      love.graphics.setScissor()
-    end
-    PaletteFX.markTrueColor(184, 96, 120, 8)
-  end
 end
 
 	local function anchorWideHud(battle, x, y, w, h, anchor)

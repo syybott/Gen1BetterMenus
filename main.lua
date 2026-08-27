@@ -2353,7 +2353,7 @@ end
       -- Wide battle draws true-colour arena and Pokémon, so recolour only
       -- the three opaque UI panels rather than the completed battle canvas.
       out[#out + 1] = battleUIZone(colors(), 0, 0, 15, 3)
-      out[#out + 1] = battleUIZone(colors(), 23, 7, 37, 11)
+      out[#out + 1] = battleUIZone(colors(), 23, 7, 37, 12)
       out[#out + 1] = battleUIZone(colors(), 0, 13, 37, 17)
       -- The HP bars retain their semantic green/yellow/red colors.
       out[#out + 1] = battleUIZone(false, 1, 2, 14, 2)
