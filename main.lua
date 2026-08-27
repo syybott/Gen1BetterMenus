@@ -834,8 +834,10 @@ end
       local y = 8 + row * 16
       local labelX = 24
       if self.gen1BetterMenusBagFavorites
+          and i ~= self.index
+          and self.swapIndex ~= i
           and favoriteItems(self.game.save)[item.value] then
-        drawFavoriteHeart(labelX + Font.width(item.label) + 4, y)
+        drawFavoriteHeart(16, y)
       end
       Font.draw(item.label, labelX, y)
       if item.ball then
@@ -1063,6 +1065,10 @@ local function installMenuLayout()
 	parent = game and game.stack and game.stack:top()
 	if parent and getmetatable(parent) == ListMenu
       and not self.anchor then
+	    if parent.gen1BetterMenusBagFavorites then
+	      self.uiSize = function() return parent:uiSize() end
+	      self.sgbPalettes = parent.sgbPalettes
+	    end
 	    self.tx = self.tx + (UI_TW - 20)
 	    local step = self.rowStep or 2
 	    local neededTh = #items * step + 1
@@ -2346,6 +2352,53 @@ return function(mod, menuColors)
   
     mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
     items = next(game, items)
+
+    -- Change QUIT to close the application, then add RESTART below it.
+    for i, item in ipairs(items) do
+      if tostring(item.label) == "QUIT" then
+        item.onSelect = function()
+          local TextBox = require("src.render.TextBox")
+
+          game.stack:push(TextBox.new(
+            game,
+            Strings("QUIT THE GAME?"),
+            nil,
+            {
+              defaultNo = true,
+              choice = function(yes)
+                if yes then
+                  pcall(love.filesystem.write, "relaunch_to_launcher.txt", "1")
+                  require("src.core.HostShell").restart()
+                end
+              end,
+            }
+          ))
+        end
+
+        table.insert(items, i + 1, {
+          label = Strings("RESTART"),
+          onSelect = function()
+            local TextBox = require("src.render.TextBox")
+
+            game.stack:push(TextBox.new(
+              game,
+              Strings("RETURN TO MAIN\nMENU?"),
+              nil,
+              {
+                defaultNo = true,
+                choice = function(yes)
+                  if yes then
+                    game:returnToTitle()
+                  end
+                end,
+              }
+            ))
+          end,
+        })
+
+        break
+      end
+    end
 
     local insertAt = #items + 1
 
