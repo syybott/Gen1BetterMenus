@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.28
+-- Gen1BetterMenus 1.0.27
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1681,7 +1681,57 @@ SummaryMenu.draw = function(self)
 end
   
   makeWideState(SummaryMenu)
-  SummaryMenu.sgbPalettes = wholeWide
+  SummaryMenu.sgbPalettes = function(self, game)
+    local zones = wholeWide()
+
+    -- Summary Pokémon HP bar.
+    if self.page == 1 and self.mon and self.mon.stats then
+      local bar = PaletteFX.pal(
+        game.data,
+        PaletteFX.barPalName(self.mon.hp, self.mon.stats.hp)
+      )
+
+      if bar then
+        zones[#zones + 1] = {
+          colors = bar,
+          x = 104,
+          y = 27,
+          w = 48,
+          h = 2,
+        }
+      end
+    end
+
+    -- Only the visible right-hand party HP bars.
+    local party = game.save and game.save.party or {}
+
+    for i, mon in ipairs(party) do
+      local col = math.floor((i - 1) / 3)
+
+      if col == 1 then
+        local row = (i - 1) % 3
+        local x = 8 + col * 144
+        local y = 8 + row * 40
+
+        local bar = PaletteFX.pal(
+          game.data,
+          PaletteFX.barPalName(mon.hp, mon.stats.hp)
+        )
+
+        if bar then
+          zones[#zones + 1] = {
+            colors = bar,
+            x = x + 5 * 8,
+            y = y + 19,
+            w = 4 * 8,
+            h = 2,
+          }
+        end
+      end
+    end
+
+    return zones
+  end
 end
 
 local function installManagerLayout()
