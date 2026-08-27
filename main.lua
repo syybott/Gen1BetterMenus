@@ -706,6 +706,7 @@ ListMenu.new = function(game, ...)
 
   if bagItems then
     self.gen1BetterMenusBagFavorites = true
+    self.wrap = true
 
     self.sgbPalettes = function()
       return {
