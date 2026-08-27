@@ -1603,32 +1603,32 @@ local function installSupportingScreens()
 	DexEntryMenu.sgbPalettes = function(self, game)
 	  local base = PaletteFX.pal(game.data, "BROWNMON")
 	  if not base then return nil end
+	  local ox = math.floor((UI_W - 160) / 2) / 8
 
 	  return {
-	  -- Native 160px zones; Game centers them with the classic entry page.
-	  -- Split the native-width base so Game centers it without invoking its
-	  -- full-width-zone expansion across both wide-screen margins.
-	  PaletteFX.zone(base, 0, 0, 9, 17),
-	  PaletteFX.zone(base, 10, 0, 19, 17),
+	  -- The entry renderer is translated into the centre of the 304px canvas;
+	  -- its palette zones must follow the same translation.
+	  PaletteFX.zone(base, ox, 0, ox + 9, 17),
+	  PaletteFX.zone(base, ox + 10, 0, ox + 19, 17),
 
 	  -- Pokémon sprite palette.
 	  PaletteFX.zone(
 		PaletteFX.monPal(game.data, self.def and self.def.id),
+		ox + 1,
 		1,
-		1,
-		8,
+		ox + 8,
 		8
 	  ),
 
 	  -- Active menu palette on the Pokédex frame only.
-	  PaletteFX.zone(colors(), 0, 0, 9, 0),     -- top-left
-	  PaletteFX.zone(colors(), 10, 0, 19, 0),   -- top-right
-	  PaletteFX.zone(colors(), 0, 17, 9, 17),   -- bottom-left
-	  PaletteFX.zone(colors(), 10, 17, 19, 17), -- bottom-right
-	  PaletteFX.zone(colors(), 0, 0, 0, 17),    -- left
-	  PaletteFX.zone(colors(), 19, 0, 19, 17),  -- right
-	  PaletteFX.zone(colors(), 0, 9, 9, 9),     -- divider-left
-	  PaletteFX.zone(colors(), 10, 9, 19, 9),   -- divider-right
+	  PaletteFX.zone(colors(), ox, 0, ox + 9, 0),         -- top-left
+	  PaletteFX.zone(colors(), ox + 10, 0, ox + 19, 0),   -- top-right
+	  PaletteFX.zone(colors(), ox, 17, ox + 9, 17),       -- bottom-left
+	  PaletteFX.zone(colors(), ox + 10, 17, ox + 19, 17), -- bottom-right
+	  PaletteFX.zone(colors(), ox, 0, ox, 17),            -- left
+	  PaletteFX.zone(colors(), ox + 19, 0, ox + 19, 17),  -- right
+	  PaletteFX.zone(colors(), ox, 9, ox + 9, 9),         -- divider-left
+	  PaletteFX.zone(colors(), ox + 10, 9, ox + 19, 9),   -- divider-right
 	}
 	end
 
@@ -1640,26 +1640,23 @@ local function installSupportingScreens()
 	  return false
 	end
 
-	DexEntryMenu.isOpaque = true
+	DexEntryMenu.isOpaque = false
+	
 	
 	local originalDexEntryDraw = DexEntryMenu.draw
 
 	DexEntryMenu.draw = function(self)
-	  local sx, sy, sw, sh = love.graphics.getScissor()
-
 	  -- The Dex renderer still inherits the classic 160px clip.
 	  -- Remove it while drawing the centered page.
 	  love.graphics.setScissor()
 
+	  love.graphics.push()
+	  love.graphics.translate(72, 0)
 	  originalDexEntryDraw(self)
-
-	  if sx then
-		love.graphics.setScissor(sx, sy, sw, sh)
-	  end
+	  love.graphics.pop()
+	  love.graphics.setScissor()
 	end
 
-  -- The classic trainer card is a panel over the field. Keeping the world in
-  -- the visible stack replaces its black outer frame with the overworld.
   TrainerCard.isOpaque = false
   TrainerCard.sgbPalettes = wholeWide
 
@@ -2698,6 +2695,18 @@ local paletteChoices = {
   installLinkLayout()
   installReportLayout()
   installLocationBanners(mod)
+  mod.hooks:wrap("screen.render_visible", function(next, state)
+    local visible = next(state)
+
+    if getmetatable(state) == PokedexMenu then
+      local top = frameGame and frameGame.stack and frameGame.stack:top()
+      if top and getmetatable(top) == DexEntryMenu then
+        return false
+      end
+    end
+
+    return visible
+  end)
   mod.hooks:wrap("render.compose", function(next, renderer, ctx)
     local handled = next(renderer, ctx)
     local solidNickname = false
