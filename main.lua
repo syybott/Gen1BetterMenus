@@ -657,6 +657,9 @@ local function installListLayout()
 
   local function sortBagFavorites(list)
     if not list.gen1BetterMenusBagFavorites then return end
+    for i = #list.items, 1, -1 do
+      if list.items[i].cancel then table.remove(list.items, i) end
+    end
     local selected = list.items[list.index]
     local selectedId = selected and selected.value
     local rank = {}
@@ -706,7 +709,6 @@ ListMenu.new = function(game, ...)
 
   if bagItems then
     self.gen1BetterMenusBagFavorites = true
-    self.wrap = true
 
     self.sgbPalettes = function()
       return {
@@ -717,6 +719,20 @@ ListMenu.new = function(game, ...)
     self.rows = 8
 
     self.update = function(list, dt)
+      if list.game.input:wasPressed("up") and list.index == 1 then
+        list.index = #list.items
+        local maxRow = list.cursorRows or list.rows
+        list.scroll = math.max(0, #list.items - maxRow)
+        list.holdDir, list.holdFrames = "up", 0
+        return
+      end
+      if list.game.input:wasPressed("down")
+          and list.index == #list.items then
+        list.index = 1
+        list.scroll = 0
+        list.holdDir, list.holdFrames = "down", 0
+        return
+      end
       if list.game.input:wasPressed("start") then
         local item = list.items[list.index]
         if not item then return end
@@ -1398,7 +1414,7 @@ end
 local function drawLocationBanner(world)
   local state = locationStates[world]
   if not state or love.timer.getTime() >= state.expiresAt then return end
-  Font.drawBox(0, 15, 20, 3)
+  Font.drawBox(0, 14, 20, 4)
   love.graphics.setColor(0, 0, 0, 1)
   local width = Font.width(state.name)
   Font.draw(state.name, math.max(8, math.floor((160 - width) / 2)), 128)
@@ -2199,6 +2215,45 @@ end
 
 return function(mod, menuColors)
   activeMod = mod
+
+  local qolCompatGame
+  local enforcingQolCompatibility = false
+  local function disableConflictingQolBattleFeatures(game)
+    if enforcingQolCompatibility or not game
+        or not mod.find("quality_of_life") then return end
+    local loader = game.mods
+    local values = loader and loader.modOptions
+      and loader.modOptions.quality_of_life
+    if type(values) ~= "table" then return end
+    local disableCaught = values.qol_caught_indicator ~= nil
+      and values.qol_caught_indicator ~= "off"
+    local disableXp = values.qol_exp_bar ~= nil
+      and values.qol_exp_bar ~= "off"
+    if not disableCaught and not disableXp then return end
+
+    enforcingQolCompatibility = true
+    local manager = ManagerState.new(game)
+    if disableCaught then
+      manager:setOption("quality_of_life", "qol_caught_indicator", "off")
+    end
+    if disableXp then
+      manager:setOption("quality_of_life", "qol_exp_bar", "off")
+    end
+    enforcingQolCompatibility = false
+    mod.log:info("disabled incompatible Quality of Life battle overlays")
+  end
+
+  mod.events:on("game.ready", function(event)
+    qolCompatGame = event and event.game
+    disableConflictingQolBattleFeatures(qolCompatGame)
+  end)
+  mod.events:on("mod.options_changed", function(event)
+    if event and event.mod == "quality_of_life"
+        and (event.key == "qol_caught_indicator"
+          or event.key == "qol_exp_bar") then
+      disableConflictingQolBattleFeatures(qolCompatGame)
+    end
+  end)
   
     local genderMod = mod.find("gender_mod")
   local genderExports = genderMod and genderMod.exports or nil
@@ -2359,6 +2414,12 @@ return function(mod, menuColors)
       default = false },
     { key = "marquee_text", label = "MARQUEE TEXT", type = "toggle",
       default = true },
+    { key = "pokedex_indicator", label = "POKéDEX INDICATOR", type = "choice",
+      default = "default",
+      choices = {
+        { "DEFAULT", "default" },
+        { "RED", "red" },
+      } },
   })
   
     mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
@@ -2548,6 +2609,19 @@ local paletteChoices = {
 		end,
 		step = function()
 		  setOption("marquee_text", not (activeMod.options:get("marquee_text") ~= false))
+		  return true
+		end,
+	  },
+
+	  {
+		label = "POKéDEX INDICATOR",
+		value = function()
+		  return activeMod.options:get("pokedex_indicator") == "red"
+		    and "RED" or "DEFAULT"
+		end,
+		step = function()
+		  local current = activeMod.options:get("pokedex_indicator")
+		  setOption("pokedex_indicator", current == "red" and "default" or "red")
 		  return true
 		end,
 	  },
@@ -2782,7 +2856,7 @@ end
 
       local locationVisible = updateLocationBanner(game)
       if locationVisible and states[first] == game.overworld then
-        out[#out + 1] = PaletteFX.zone(colors(), 0, 15, 19, 17)
+        out[#out + 1] = PaletteFX.zone(colors(), 0, 14, 19, 17)
       end
     end
     return out
