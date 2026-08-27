@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.27
+-- Gen1BetterMenus 1.0.28
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
