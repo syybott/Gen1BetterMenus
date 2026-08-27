@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.28
+-- Gen1BetterMenus 1.0.30
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -826,6 +826,15 @@ end
     end
     drawFrameOnly(0, 0, UI_TW, UI_TH)
     love.graphics.setColor(1, 1, 1, 1)
+  end
+
+  local originalDexChoose = PokedexMenu.onChoose
+  PokedexMenu.onChoose = function(item, dexList)
+    originalDexChoose(item, dexList)
+    local top = dexList.game.stack:top()
+    if top and getmetatable(top) == Menu then
+      top.tx = 24
+    end
   end
 
   ListMenu.draw = function(self)
