@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.29
+-- Gen1BetterMenus 1.0.28
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -706,6 +706,74 @@ end
   -- PokedexMenu stamps its own palette function onto the ListMenu instance,
   -- so update that factory-owned function as well as the generic class.
   PokedexMenu.sgbPalettes = wholeWide
+
+  -- Current Gen1Recomp gives the Pokédex contents screen its own renderer
+  -- rather than a ListMenu instance. Lay that renderer out across the wide
+  -- surface instead of leaving its native 160px contents at the left edge.
+  PokedexMenu.isOpaque = false
+  PokedexMenu.uiSize = function() return UI_W, UI_H end
+  PokedexMenu.isWideBattleLayout = function() return false end
+  PokedexMenu.draw = function(self)
+    local dividerTx, sideX = 24, 208
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
+
+    local dividerX = dividerTx * 8 + 3
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", dividerX, 8, 2, UI_H - 16)
+    for ty = 2, 16, 2 do
+      local nodeY = ty * 8
+      love.graphics.rectangle("fill", dividerX - 2, nodeY - 3, 6, 6)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", dividerX - 1, nodeY - 2, 4, 4)
+      love.graphics.setColor(0, 0, 0, 1)
+    end
+
+    local at = self.rowsAt
+    love.graphics.setColor(0, 0, 0, 1)
+    Font.draw(("─"):rep(12), sideX - 8, at.rule * 8)
+    Font.draw(Strings("CONTENTS"), 8, 8)
+    Font.draw(Strings("SEEN"), sideX, at.seen * 8)
+    Font.draw(Strings("OWN"), sideX, at.own * 8)
+
+    local function count(n, ty)
+      local text = tostring(n)
+      Font.draw(text, UI_W - 8 - Font.width(text), ty * 8)
+    end
+    count(self.seenCount, at.seen)
+    count(self.ownedCount, at.own)
+
+    for i, label in ipairs(self:sideItems()) do
+      Font.draw(label, sideX, (at.items + (i - 1) * 2) * 8)
+    end
+
+    for row = 1, self:rows() do
+      local index = self.scroll + row
+      local item = self.items[index]
+      if not item then break end
+      local rowY = 24 + (row - 1) * 16
+      if item.ball then
+        love.graphics.circle("fill", 28, rowY + 4, 3.5)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.rectangle("fill", 24.5, rowY + 3.5, 7, 1)
+        love.graphics.circle("fill", 28, rowY + 4, 1.2)
+        love.graphics.setColor(0, 0, 0, 1)
+      end
+      Font.draw(item.name, 40, rowY)
+      local numX = dividerTx * 8 - 16 - Font.width(item.num)
+      love.graphics.rectangle("fill", numX + 2, rowY + 1, 1, 6)
+      love.graphics.rectangle("fill", numX + 5, rowY + 1, 1, 6)
+      love.graphics.rectangle("fill", numX + 1, rowY + 3, 6, 1)
+      love.graphics.rectangle("fill", numX + 1, rowY + 5, 6, 1)
+      Font.draw(item.num, numX + 8, rowY)
+      if index == self.index then
+        Font.drawCode(self.hollowIndex == index
+          and Theme.cursorHollow or Theme.cursor, 8, rowY)
+      end
+    end
+    drawFrameOnly(0, 0, UI_TW, UI_TH)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
 
   ListMenu.draw = function(self)
     local states = self.game and self.game.stack and self.game.stack.states or {}
