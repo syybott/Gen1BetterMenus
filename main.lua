@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.28
+-- Gen1BetterMenus 1.0.29
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -2319,6 +2319,53 @@ return function(mod, menuColors)
   
     mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
     items = next(game, items)
+
+    -- Change QUIT to close the application, then add RESTART below it.
+    for i, item in ipairs(items) do
+      if tostring(item.label) == "QUIT" then
+        item.onSelect = function()
+          local TextBox = require("src.render.TextBox")
+
+          game.stack:push(TextBox.new(
+            game,
+            Strings("QUIT THE GAME?"),
+            nil,
+            {
+              defaultNo = true,
+              choice = function(yes)
+                if yes then
+                  pcall(love.filesystem.write, "relaunch_to_launcher.txt", "1")
+                  require("src.core.HostShell").restart()
+                end
+              end,
+            }
+          ))
+        end
+
+        table.insert(items, i + 1, {
+          label = Strings("RESTART"),
+          onSelect = function()
+            local TextBox = require("src.render.TextBox")
+
+            game.stack:push(TextBox.new(
+              game,
+              Strings("RETURN TO MAIN\nMENU?"),
+              nil,
+              {
+                defaultNo = true,
+                choice = function(yes)
+                  if yes then
+                    game:returnToTitle()
+                  end
+                end,
+              }
+            ))
+          end,
+        })
+
+        break
+      end
+    end
 
     local insertAt = #items + 1
 
