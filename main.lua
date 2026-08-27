@@ -894,12 +894,13 @@ local function installMenuLayout()
       for _, item in ipairs(items) do
         widest = math.max(widest, #(Font.split(item.label or "")))
       end
+
       opts.tw = 11
-	  opts.tx = UI_TW - opts.tw
-	  opts.ty = 0
-	  opts.itemY = 1
-	  opts.th = 17
-      opts.anchor = "topright"
+      opts.th = 17
+      opts.tx = math.floor((UI_TW - opts.tw) / 2)
+      opts.ty = math.floor((UI_TH - opts.th) / 2)
+      opts.itemY = 1
+      opts.anchor = nil
     end
     local self = originalNew(game, items, opts)
 	if opts.startCloses then
