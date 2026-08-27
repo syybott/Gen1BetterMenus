@@ -31,6 +31,20 @@ return function(mod, menuColors)
 
   local exposedStatuses = setmetatable({}, { __mode = "k" })
   local CAUGHT_ROW = { { hp = 1 } }
+  local RED_CAUGHT_BALL = {
+    "..kkk..",
+    ".krrrk.",
+    "krrrrrk",
+    "kkkwkkk",
+    "kwwwwwk",
+    ".kwwwk.",
+    "..kkk..",
+  }
+  local RED_CAUGHT_COLORS = {
+    k = { 0, 0, 0 },
+    r = { 224, 48, 48 },
+    w = { 255, 255, 255 },
+  }
   local GENDER_MOD_ID = "gender_mod"
   local STAGED_GENDER_SCRATCH_X = 0
   local STAGED_GENDER_SCRATCH_Y = 87
@@ -54,6 +68,11 @@ return function(mod, menuColors)
   local function inversePalette()
     local ok, value = pcall(mod.options.get, mod.options, "inverse")
     return ok and value == true
+  end
+
+  local function caughtIndicatorStyle()
+    local ok, value = pcall(mod.options.get, mod.options, "pokedex_indicator")
+    return ok and value or "default"
   end
 
   local function clearInverseArtifacts(rects)
@@ -268,15 +287,37 @@ return function(mod, menuColors)
   end
 
   local function drawCaughtBall(battle, x, y)
-    if type(battle.drawBallRow) ~= "function" then return end
     x = x + 54
     y = y - 1
     local g = love.graphics
     local sx, sy, sw, sh = g.getScissor()
     g.setScissor(x, y, 8, 8)
-    love.graphics.setColor(1, 1, 1, 1)
-    battle:drawBallRow(CAUGHT_ROW, x, y, 8)
+    if caughtIndicatorStyle() == "red" then
+      local shader = g.getShader()
+      g.setShader()
+      local palette = PaletteFX.effectiveColors(menuColors())
+      local background = palette and palette[1] or { 255, 255, 255 }
+      g.setColor(background[1] / 255, background[2] / 255,
+        background[3] / 255, 1)
+      g.rectangle("fill", x, y, 8, 8)
+      for py, row in ipairs(RED_CAUGHT_BALL) do
+        for px = 1, #row do
+          local color = RED_CAUGHT_COLORS[row:sub(px, px)]
+          if color then
+            local dotX, dotY = x + px, y + py - 1
+            g.setColor(color[1] / 255, color[2] / 255, color[3] / 255, 1)
+            g.rectangle("fill", dotX, dotY, 1, 1)
+          end
+        end
+      end
+      g.setShader(shader)
+      PaletteFX.markTrueColor(x, y, 8, 8)
+    elseif type(battle.drawBallRow) == "function" then
+      g.setColor(1, 1, 1, 1)
+      battle:drawBallRow(CAUGHT_ROW, x, y, 8)
+    end
     if sx then g.setScissor(sx, sy, sw, sh) else g.setScissor() end
+    g.setColor(1, 1, 1, 1)
   end
 
   local function drawNativeHP(battle, battler, tx, ty, barType, segments,
