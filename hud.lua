@@ -185,6 +185,11 @@ return function(mod, menuColors)
     end
     state.level = level
 
+    if state.burst ~= nil then
+      state.burst = state.burst + 1
+      if state.burst >= EXP_BURST_FRAMES then state.burst = nil end
+    end
+
     if state.stage == "finish" then
       state.shown = approach(state.shown, maxPixels)
       if state.shown == maxPixels then
@@ -194,10 +199,6 @@ return function(mod, menuColors)
       end
     elseif state.stage == "glint" then
       state.glint = state.glint + 1
-      if state.burst then
-        state.burst = state.burst + 1
-        if state.burst >= EXP_BURST_FRAMES then state.burst = nil end
-      end
       if state.glint >= EXP_GLINT_FRAMES then
         state.wraps = math.max(0, state.wraps - 1)
         state.glint = nil

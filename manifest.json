@@ -1,7 +1,7 @@
 {
   "id": "gen1-better-menus",
   "name": "Gen1BetterMenus",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "api": 2,
   "entry": "main.lua",
   "profile": "overhaul",
