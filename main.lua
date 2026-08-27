@@ -1506,13 +1506,34 @@ local function installSupportingScreens()
         local bar = PaletteFX.pal(game.data,
           PaletteFX.barPalName(hp, mon.stats.hp))
         if bar then
-		zones[#zones + 1] = {
-		  colors = bar,
-		  x = x + 5 * 8,
-		  y = y + 19,
-		  w = 4 * 8,
-		  h = 2,
-		}
+          local barX = x + 5 * 8
+          local barY = y + 19
+
+          local coveredBySubmenu = false
+
+          if self.submenu then
+            local n = #self.subItems
+            local menuX = (UI_TW - 11) * 8
+            local menuY = (17 - n * 2 - 1) * 8
+            local menuW = 11 * 8
+            local menuH = (n * 2 + 1) * 8
+
+            coveredBySubmenu =
+              barX < menuX + menuW
+              and barX + 4 * 8 > menuX
+              and barY < menuY + menuH
+              and barY + 2 > menuY
+          end
+
+          if not coveredBySubmenu then
+            zones[#zones + 1] = {
+              colors = bar,
+              x = barX,
+              y = barY,
+              w = 4 * 8,
+              h = 2,
+            }
+          end
         end
       end
     end
