@@ -2282,7 +2282,8 @@ return function(mod, menuColors)
     return
   end
 
-  local okScreen, screen = pcall(factory, mod, genderExports, compatibility)
+  local okScreen, screen = pcall(factory, mod, genderExports, compatibility,
+    colors)
   if not okScreen or type(screen) ~= "table"
       or type(screen.new) ~= "function" then
     mod.log:error("PC screen factory failed: %s", tostring(screen))

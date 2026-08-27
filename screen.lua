@@ -1,7 +1,7 @@
 -- A single party-and-box workspace inspired by the storage screens in newer
 -- Pokémon games. The engine's compact list-shaped Gen 1 saves stay intact;
 -- this screen is only a controller and presentation layer over those lists.
-return function(mod, genderExports, compatibility)
+return function(mod, genderExports, compatibility, menuColors)
   compatibility = compatibility or {}
   local Assets = require("src.render.Assets")
   local Boxes = require("src.pokemon.Boxes")
@@ -1284,7 +1284,9 @@ end
     local data = game and game.data
     if not data then return nil end
     local layout = layoutFor(self)
-    local base = PaletteFX.pal(data, "BLUEMON")
+    local selectedMenuPalette = type(menuColors) == "function"
+      and menuColors() or nil
+    local base = selectedMenuPalette or PaletteFX.pal(data, "BLUEMON")
       or PaletteFX.pal(data, "MEWMON")
     if not base then return nil end
     local zones = {
