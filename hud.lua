@@ -783,39 +783,40 @@ end
 	  end
 	end
 
-	local function renderWide(battle)
-	  
-	  local function battleIsTopState(battle)
-	  local stack = battle.game and battle.game.stack
+	local function battleIsTopState(battle)
+	  local stack = battle and battle.game and battle.game.stack
 	  return not (stack and stack.top) or stack:top() == battle
 	end
 
-	local function anchorHud(battle, x, y, w, h, anchor)
-	  if not battle:extendedHUD() or not battleIsTopState(battle) then
-		return
+	local function renderWide(battle)
+	  if not battleIsTopState(battle) then return end
+
+	  local function anchorHud(battle, x, y, w, h, anchor)
+	    if not battle:extendedHUD() or not battleIsTopState(battle) then
+		  return
+	    end
+
+	    local renderer = battle.game and battle.game.renderer
+	    if not (renderer and renderer.setBattleUIAnchor) then
+		  return
+	    end
+
+	    x = x + (battle.extendedHUDOffsetX or 0)
+	    y = y + (battle.extendedHUDOffsetY or 0)
+
+	    local x2 = math.min(304, x + w)
+	    local y2 = math.min(144, y + h)
+
+	    x = math.max(0, x)
+	    y = math.max(0, y)
+
+	    w = x2 - x
+	    h = y2 - y
+
+	    if w > 0 and h > 0 then
+		  renderer:setBattleUIAnchor(x, y, w, h, anchor)
+	    end
 	  end
-
-	  local renderer = battle.game and battle.game.renderer
-	  if not (renderer and renderer.setBattleUIAnchor) then
-		return
-	  end
-
-	  x = x + (battle.extendedHUDOffsetX or 0)
-	  y = y + (battle.extendedHUDOffsetY or 0)
-
-	  local x2 = math.min(304, x + w)
-	  local y2 = math.min(144, y + h)
-
-	  x = math.max(0, x)
-	  y = math.max(0, y)
-
-	  w = x2 - x
-	  h = y2 - y
-
-	  if w > 0 and h > 0 then
-		renderer:setBattleUIAnchor(x, y, w, h, anchor)
-	  end
-	end
 
     local fx = battle.fx
     if fx and fx.flash and fx.flash > 0
@@ -886,10 +887,12 @@ end
 		  and renderer
 		and originalEndBattleHUDPass then
 		renderer.endBattleHUDPass = function(self, previous)
-		  renderWideEnemy(battle, battle.fx)
-		  renderWidePlayer(battle)
-		  anchorWideHud(battle, 0, 0, 128, 32, "top")
-		  anchorWideHud(battle, 184, 56, 120, 48, "bottom")
+		  if battleIsTopState(battle) then
+		    renderWideEnemy(battle, battle.fx)
+		    renderWidePlayer(battle)
+		    anchorWideHud(battle, 0, 0, 128, 32, "top")
+		    anchorWideHud(battle, 184, 56, 120, 48, "bottom")
+		  end
 		  return originalEndBattleHUDPass(self, previous)
 		end
 	  end
