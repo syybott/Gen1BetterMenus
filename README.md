@@ -22,6 +22,8 @@ Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the addit
 - Improved dialogue and choice-box layouts
 - Use [SELECT] to pin your favorites on the start menu (SAVE YOUR CHANGES IN GAME OR THEY WILL RESET)
 - Use [START] to pin your favorites in your item bag
+- QUIT option in game will take you back to the launcher
+- RESTART will bring you to the title menu
 
 ## 📦 Installation
 1. Download the latest `Gen1BetterMenus` ZIP
