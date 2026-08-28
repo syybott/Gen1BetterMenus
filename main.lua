@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.30
+-- Gen1BetterMenus 1.0.31
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1652,7 +1652,9 @@ local function installSupportingScreens()
 
 	  love.graphics.push()
 	  love.graphics.translate(72, 0)
+	  PaletteFX.setMarkOffset(72)
 	  originalDexEntryDraw(self)
+	  PaletteFX.setMarkOffset(0)
 	  love.graphics.pop()
 	  love.graphics.setScissor()
 	end
@@ -1955,7 +1957,8 @@ SummaryMenu.draw = function(self)
 
 	  local monPal = self.mon
 	    and PaletteFX.monPal(self.game.data, self.mon.species)
-	  local shader = monPal and PaletteFX.shader()
+	  local shader = not self.spriteTrueColor
+	    and monPal and PaletteFX.shader()
 
 	  if shader then
 	    PaletteFX.sendColors(shader, monPal)
