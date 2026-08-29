@@ -2,11 +2,7 @@
 
 **A faithful widescreen UI for Gen1Recomp.**
 
-Gen1BetterMenus expands Pokémon Gen 1's original interface for modern displays while preserving most of the look, structure, and visual language of the original games.
-
-The goal is not to redesign Gen 1 into a modern interface. It is to make widescreen Gen 1 feel like it was always supposed to look this way.
-
-Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the additional screen space and quality of life UI enhancements. 
+Gen1BetterMenus expands Pokémon Gen 1's original interface for modern displays while preserving most of the look, structure, and visual language of the original games. The goal is not to redesign Gen 1 into a modern PC game interface. It is to make widescreen Gen 1 feel like it was always supposed to look this way. Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the additional screen space and quality of life UI enhancements. 
 
 > 🖥️ **Requires `BATTLE HUD: EXTENDED` to be enabled in Gen1Recomp if you are not using the portrait/og beta**
 
@@ -46,7 +42,5 @@ Reverse the selected palette from light-to-dark into dark-to-light.
 Changes can be made directly through the Mod Manager or main options menu
 
 
-## 🚧 Current Status
-Gen1BetterMenus is in active development.
-Most major interface families have already been adapted for widescreen, but individual screens, edge cases, and visual inconsistencies may continue to be refined as development progresses.
-Portrait-oriented layouts are currently in a separate testing beta at this time.
+## 👏 Special Thanks
+To [piftee](https://github.com/piftee) for the original ideas behind the Modern PC, Modern Pockets, and Battle HUD information concepts. Their original work and design ideas were a major inspiration for these features.
