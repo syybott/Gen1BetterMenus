@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.31
+-- Gen1BetterMenus 1.0.32
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -16,6 +16,7 @@ local OptionsMenu = require("src.ui.OptionsMenu")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local BoxMenu = require("src.ui.BoxMenu")
+local BagMenu = require("src.ui.BagMenu")
 local PlayerPC = require("src.ui.PlayerPC")
 local PokedexMenu = require("src.ui.PokedexMenu")
 local PartyMenu = require("src.ui.PartyMenu")
@@ -370,7 +371,8 @@ local function installOverworldScaleStability()
     local top = self.stack and self.stack:top()
 	local below = states[#states - 1]
 	if top and getmetatable(top) == Menu
-	    and below and below.gen1BetterMenusBagFavorites then
+	    and below and below.gen1BetterMenusBagFavorites
+	    and not below.modernBagUI then
 	  top.gen1BetterMenusBagSubmenu = true
 	  top.uiSize = function() return below:uiSize() end
 	  top.sgbPalettes = below.sgbPalettes
@@ -1911,7 +1913,6 @@ local function installSupportingScreens()
       local w, h = parent:uiSize()
       if w and w > Renderer.WIDTH then
         self.uiSize = function() return w, h end
-        self.isWideBattleLayout = function() return true end
         self.gen1BetterMenusWide = true
       end
     end
@@ -2317,6 +2318,74 @@ return function(mod, menuColors)
   else
     mod.content.screens:register("BoxMenu", boxMenuWrapper)
   end
+
+  -- Modern Bag UI is vendored under BetterMenus-owned filenames. Preserve
+  -- the controller registered before us so the option can switch presentation
+  -- off without changing item behavior or requiring a restart.
+  local function loadBagFactory(filename)
+    local bagSource, bagReadErr = mod:read(filename)
+    if not bagSource then
+      mod.log:error("%s is missing (%s); Modern Bag UI disabled", filename,
+        tostring(bagReadErr or "unknown read error"))
+      return nil
+    end
+    local bagChunk, bagCompileErr = load(
+      bagSource, "@" .. mod.path .. "/" .. filename)
+    if not bagChunk then
+      mod.log:error("%s did not compile: %s", filename,
+        tostring(bagCompileErr))
+      return nil
+    end
+    local okBagFactory, bagFactory = pcall(bagChunk)
+    if not okBagFactory or type(bagFactory) ~= "function" then
+      mod.log:error("%s must return a factory function", filename)
+      return nil
+    end
+    return bagFactory
+  end
+
+  local makeBagScreen = loadBagFactory("modern_bag_screen.lua")
+  local makeBagInventory = loadBagFactory("modern_bag_inventory.lua")
+  if makeBagScreen and makeBagInventory then
+    local originalBagScreen = mod.content.screens:get("BagMenu")
+    local bagCompatibility = {
+      usefulBag = mod.find("useful_bag") ~= nil,
+      kantoReforged = mod.find("Kanto-Reforged") ~= nil,
+      upstreamBagScreen = mod.find("Kanto-Reforged") and originalBagScreen
+        or nil,
+    }
+    local okBagScreen, modernBagScreen = pcall(
+      makeBagScreen, mod, bagCompatibility, colors)
+    local okBagInventory, modernBagInventory = false, nil
+    if okBagScreen and type(modernBagScreen) == "table"
+        and type(modernBagScreen.new) == "function" then
+      okBagInventory, modernBagInventory = pcall(
+        makeBagInventory, mod, modernBagScreen, bagCompatibility)
+    end
+    if okBagScreen and okBagInventory and type(modernBagInventory) == "table" then
+      local bagMenuWrapper = {
+        new = function(game, ...)
+          if activeMod.options:get("modern_bag_ui") ~= false then
+            return modernBagScreen.new(game, ...)
+          end
+          if originalBagScreen and type(originalBagScreen.new) == "function" then
+            return originalBagScreen.new(game, ...)
+          end
+          return BagMenu.new(game, ...)
+        end,
+      }
+      if originalBagScreen then
+        mod.content.screens:override("BagMenu", bagMenuWrapper)
+      else
+        mod.content.screens:register("BagMenu", bagMenuWrapper)
+      end
+      mod.exports.modernBag = modernBagScreen
+      mod.exports.modernBagInventoryLimits = modernBagInventory.limits
+    else
+      mod.log:error("Modern Bag UI factory failed: %s / %s",
+        tostring(modernBagScreen), tostring(modernBagInventory))
+    end
+  end
   
     local hudSource, hudReadErr = mod:read("hud.lua")
 	  if not hudSource then
@@ -2422,6 +2491,8 @@ return function(mod, menuColors)
       default = false },
     { key = "modern_pc_ui", label = "MODERN PC UI", type = "toggle",
       default = false },
+    { key = "modern_bag_ui", label = "MODERN BAG UI", type = "toggle",
+      default = true },
     { key = "marquee_text", label = "MARQUEE TEXT", type = "toggle",
       default = true },
     { key = "pokedex_indicator", label = "POKéDEX INDICATOR", type = "choice",
@@ -2613,6 +2684,18 @@ local paletteChoices = {
 	  },
 
 	  {
+		label = "MODERN BAG UI",
+		value = function()
+		  return activeMod.options:get("modern_bag_ui") ~= false and "ON" or "OFF"
+		end,
+		step = function()
+		  setOption("modern_bag_ui",
+		    not (activeMod.options:get("modern_bag_ui") ~= false))
+		  return true
+		end,
+	  },
+
+	  {
 		label = "MARQUEE TEXT",
 		value = function()
 		  return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF"
@@ -2751,6 +2834,25 @@ local paletteChoices = {
   end)
   mod.hooks:wrap("render.letterbox", function(next, ctx)
     next(ctx)
+    local top = frameGame and frameGame.stack and frameGame.stack:top()
+    if top and top.__modernBagWhiteBackdrop
+       and ctx and ctx.ww and ctx.wh then
+      local r, green, b, a = love.graphics.getColor()
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.rectangle("fill", 0, 0, ctx.ww, ctx.wh)
+      love.graphics.setColor(r, green, b, a)
+      return
+    end
+    if top and top.modernBagUI and ctx and ctx.ww and ctx.wh then
+      local palette = PaletteFX.effectiveColors(colors())
+      local footer = palette and palette[3] or { 85, 85, 85 }
+      local r, green, b, a = love.graphics.getColor()
+      love.graphics.setColor(
+        footer[1] / 255, footer[2] / 255, footer[3] / 255, 1)
+      love.graphics.rectangle("fill", 0, 0, ctx.ww, ctx.wh)
+      love.graphics.setColor(r, green, b, a)
+      return
+    end
     local introNaming = false
     for _, state in ipairs(frameGame and frameGame.stack
         and frameGame.stack.states or {}) do
@@ -2801,6 +2903,31 @@ end
     local top = game and game.stack and game.stack:top()
     local options = game and game.save and game.save.options
 
+    -- The responsive Bag reaches the logical canvas edge, but the final
+    -- presentation pass can leave one framebuffer row from the overworld.
+    -- Cover that post-composite seam with the active menu footer color.
+    local states = game and game.stack and game.stack.states or {}
+    local stack = game and game.stack
+    local first = stack and stack.visibleBase and stack:visibleBase() or 1
+    local modernBagVisible = false
+    for i = first, #states do
+      if states[i] and states[i].modernBagUI then
+        modernBagVisible = true
+        break
+      end
+    end
+    if modernBagVisible and viewport and viewport.width and viewport.height then
+      local palette = PaletteFX.effectiveColors(colors())
+      local footer = palette and palette[3] or { 85, 85, 85 }
+      local pixelH = 1 / (viewport.dpiY or 1)
+      local r, green, b, a = love.graphics.getColor()
+      love.graphics.setColor(
+        footer[1] / 255, footer[2] / 255, footer[3] / 255, 1)
+      love.graphics.rectangle(
+        "fill", 0, viewport.height - pixelH, viewport.width, pixelH)
+      love.graphics.setColor(r, green, b, a)
+    end
+
 	local pipelineId = Pipelines.worldPipeline()
     if not (top and getmetatable(top) == BattleState
             and top.extendedHUD and top:extendedHUD()
@@ -2825,6 +2952,20 @@ end
     local top = game and game.stack and game.stack:top()
     local mt = top and getmetatable(top)
 
+    -- Modern Bag composes a responsive pixel-space surface and supplies its
+    -- complete palette map through its own sgbPalettes method.  Appending the
+    -- legacy tile-space Menu/ListMenu zones below recolors the old 160px Bag
+    -- region over that surface, producing the vertical palette stripe.  Once
+    -- Modern Bag owns the visible palette map, leave it unchanged here.
+    local states = game and game.stack and game.stack.states or {}
+    local stack = game and game.stack
+    local first = stack and stack.visibleBase and stack:visibleBase() or 1
+    for i = first, #states do
+      if states[i] and states[i].modernBagUI then
+        return out
+      end
+    end
+
     if mt == BattleState and top.wideLayout and top:wideLayout() then
       -- Wide battle draws true-colour arena and Pokémon, so recolour only
       -- the three opaque UI panels rather than the completed battle canvas.
@@ -2836,7 +2977,6 @@ end
       out[#out + 1] = battleUIZone(false, 24, 9, 36, 9)
     else
       local title
-      local states = game and game.stack and game.stack.states or {}
       for i = 1, #states do
         if getmetatable(states[i]) == TitleState then
           title = states[i]
@@ -2846,8 +2986,6 @@ end
       -- Color every visible UI overlay, not only the top state. A ChoiceBox
       -- sits above its TextBox, and ContinueInfo is private to TitleState;
       -- walking the visible stack covers both without depending on names.
-      local stack = game and game.stack
-      local first = stack and stack.visibleBase and stack:visibleBase() or 1
       for i = first, #states do
         local state = states[i]
         local stateMt = state and getmetatable(state)
