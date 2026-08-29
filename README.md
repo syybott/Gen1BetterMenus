@@ -14,7 +14,8 @@ Menus remain recognizably Pokémon Red, Blue, and Yellow — just with the addit
 
 - Faithful Gen 1-style frames, typography, and menu structure
 - Widescreen Options and Settings screens
-- Modern Bill's PC interface option
+- Adds a completely redesigned Modern Bag interface
+- Adda a Modern Bill's PC interface option
 - XP Bar and animation
 - Pokedex indicator for enemy Pokemon so you know what you have captured (Red/Blue options)
 - 40+ selectable menu palettes
