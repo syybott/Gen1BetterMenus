@@ -44,3 +44,5 @@ Changes can be made directly through the Mod Manager or main options menu
 
 ## 👏 Special Thanks
 To [piftee](https://github.com/piftee) for the original ideas behind the Modern PC, Modern Pockets, and Battle HUD information concepts. Their original work and design ideas were a major inspiration for these features.
+
+Pokémon and related trademarks are property of their respective owners. This project is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company.
