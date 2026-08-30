@@ -1,37 +1,51 @@
 # Third-Party Notices
 
+Gen1BetterMenus incorporates and/or adapts portions of third-party software identified below.
+
+The licenses listed in this document apply only to the applicable third-party material. They do not grant a license to Gen1BetterMenus as a whole or to original Gen1BetterMenus code and modifications.
+
+Unless otherwise stated, original Gen1BetterMenus code and modifications are All Rights Reserved.
+
+---
+
 ## gen1recomp-groovy-palette-frames
 
 Palette definitions adapted from:
+
 MadeinTaly/gen1recomp-groovy-palette-frames
 
-Copyright (c) MadeinTaly
+Copyright (c) MadeinTaly  
 Licensed under the MIT License.
 
-Gen1BetterMenus incorporates code from the following project:
+**[INSERT ORIGINAL MIT LICENSE TEXT HERE]**
+
+---
 
 ## Gen1Recomp Battle Info HUD
 
-Copyright (c) piftee
-
-Source:
+Original project:  
 https://github.com/piftee/gen1recomp-battle-info-hud
 
-Gen1BetterMenus includes integration support for Gen1Recomp Battle Info HUD.
+Copyright (c) piftee  
+Licensed under the MIT License.
 
-Used for:
-- Enhanced battle information display.
-- Battle HUD rendering features.
+Gen1BetterMenus incorporates portions of Gen1Recomp Battle Info HUD for enhanced battle information and battle HUD rendering.
 
-Original project by piftee. Any modifications or compatibility work performed for Gen1BetterMenus are maintained within this project and do not represent the original upstream project.
+The upstream code may have been modified, adapted, or integrated differently within Gen1BetterMenus. Gen1BetterMenus-specific modifications and compatibility work are maintained independently and do not represent the original upstream project.
+
+**[INSERT ORIGINAL MIT LICENSE TEXT HERE]**
+
+---
 
 ## Gen1Recomp Modern PC UI
 
-Project: https://github.com/piftee/gen1recomp-modern-pc-ui  
-Author/Copyright: Copyright (c) 2026 ishhodaszi  
-License: MIT License
+Original project:  
+https://github.com/piftee/gen1recomp-modern-pc-ui
 
-The incorporated Modern PC UI code has been integrated into Gen1BetterMenus and may be modified from the original project.
+Copyright (c) 2026 ishhodaszi  
+Licensed under the MIT License.
+
+Gen1BetterMenus incorporates portions of Modern PC UI. The incorporated code may have been substantially modified, adapted, or integrated differently from the original project.
 
 MIT License
 
@@ -55,9 +69,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+---
+
 ## Gen1Recomp Modern Bag UI
 
-The incorporated Modern Bag UI code has been integrated into Gen1BetterMenus and may be modified from the original project.
+**[INSERT ORIGINAL PROJECT URL HERE]**
+
+Copyright (c) 2026 ish hodaszi  
+Licensed under the MIT License.
+
+Gen1BetterMenus incorporates portions of Modern Bag UI. The incorporated code may have been substantially modified, adapted, or integrated differently from the original project.
 
 MIT License
 
@@ -80,4 +101,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
