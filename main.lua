@@ -1878,7 +1878,7 @@ local function installSupportingScreens()
         if w and w > Renderer.WIDTH then wideBattle = true break end
       end
     end
-    if wideBattle then
+    if wideBattle or self.mon then
       local originalDraw = self.draw
       self.gen1BetterMenusSolidNickname = true
       self.uiSize = function() return UI_W, UI_H end
