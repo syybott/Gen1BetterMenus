@@ -6,7 +6,7 @@
 -- that controller instead of duplicating it. Only the visible list, drawing,
 -- left/right pocket navigation and filtered-list reordering live here.
 return function(mod, compatibility, menuColors, useStockOgMenuPalette,
-  usesOgEnginePalette)
+    menuPaperPalette)
   compatibility = compatibility or {}
   local BagMenu = require("src.ui.BagMenu")
   local Bag = require("src.inventory.Bag")
@@ -26,7 +26,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
   local PORTRAIT_MIN_H = 224
   local PORTRAIT_MAX_H = 400
   local ROWS = 6
-  local ROW_H = 15
+  local ROW_H = 13
 
   local WHITE = 1
   local LIGHT = 170 / 255
@@ -322,16 +322,6 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     love.graphics.rectangle("fill", x + 2, y, width - 4, height)
     love.graphics.rectangle("fill", x + 1, y + 1, width - 2, height - 2)
     love.graphics.rectangle("fill", x, y + 2, width, height - 4)
-  end
-
-  local function markPixelRoundTrueColor(x, y, width, height)
-    if type(usesOgEnginePalette) == "function"
-        and usesOgEnginePalette(game) then return end
-    x, y = math.floor(x), math.floor(y)
-    width, height = math.floor(width), math.floor(height)
-    PaletteFX.markTrueColor(x + 2, y, width - 4, height)
-    PaletteFX.markTrueColor(x + 1, y + 1, width - 2, height - 2)
-    PaletteFX.markTrueColor(x, y + 2, width, height - 4)
   end
 
   local function displayPixels()
@@ -752,6 +742,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
         syncExternalPocketIndex(menu)
         clampList(menu)
         menu.modernBagInventorySignature = inventorySignature(menu)
+        menu.modernBagHeaderFlash = 0
       end
       return
     end
@@ -767,6 +758,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     menu.index = saved and saved.index or 1
     menu.scroll = saved and saved.scroll or 0
     rebuildPocket(menu, saved and saved.id)
+    menu.modernBagHeaderFlash = 0
   end
 
   local function finishSwap(menu, targetId)
@@ -810,36 +802,41 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     return counts
   end
 
-  local function drawClassicPokeBall16(x, y)
+  local function drawClassicPokeBall16(x, y, trueColorZones, indexedRect)
     x, y = math.floor(x), math.floor(y)
-    local function rgb(red, green, blue, rx, ry, rw, rh)
+    local function rgb(index, red, green, blue, rx, ry, rw, rh)
+      if indexedRect then
+        indexedRect(index, rx, ry, rw, rh)
+        return
+      end
       love.graphics.setColor(red / 255, green / 255, blue / 255, 1)
       love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
-      if not (type(usesOgEnginePalette) == "function"
-          and usesOgEnginePalette()) then
-        PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      if trueColorZones then
+        trueColorZones[#trueColorZones + 1] = {
+          colors = false, x = x + rx, y = y + ry, w = rw, h = rh,
+        }
       end
     end
-    rgb(18, 18, 18, 6, 1, 4, 1)
-    rgb(18, 18, 18, 4, 2, 8, 1)
-    rgb(18, 18, 18, 3, 3, 10, 1)
-    rgb(18, 18, 18, 2, 4, 12, 1)
-    rgb(18, 18, 18, 1, 5, 14, 6)
-    rgb(18, 18, 18, 2, 11, 12, 1)
-    rgb(18, 18, 18, 3, 12, 10, 1)
-    rgb(18, 18, 18, 4, 13, 8, 1)
-    rgb(18, 18, 18, 6, 14, 4, 1)
-    rgb(232, 48, 48, 6, 2, 4, 1)
-    rgb(232, 48, 48, 5, 3, 6, 1)
-    rgb(232, 48, 48, 4, 4, 8, 1)
-    rgb(232, 48, 48, 3, 5, 10, 2)
-    rgb(255, 255, 255, 3, 9, 10, 2)
-    rgb(255, 255, 255, 4, 11, 8, 1)
-    rgb(255, 255, 255, 5, 12, 6, 1)
-    rgb(255, 255, 255, 6, 13, 4, 1)
-    rgb(18, 18, 18, 2, 7, 12, 2)
-    rgb(18, 18, 18, 6, 6, 4, 4)
-    rgb(255, 255, 255, 7, 7, 2, 2)
+    rgb(4, 18, 18, 18, 6, 1, 4, 1)
+    rgb(4, 18, 18, 18, 4, 2, 8, 1)
+    rgb(4, 18, 18, 18, 3, 3, 10, 1)
+    rgb(4, 18, 18, 18, 2, 4, 12, 1)
+    rgb(4, 18, 18, 18, 1, 5, 14, 6)
+    rgb(4, 18, 18, 18, 2, 11, 12, 1)
+    rgb(4, 18, 18, 18, 3, 12, 10, 1)
+    rgb(4, 18, 18, 18, 4, 13, 8, 1)
+    rgb(4, 18, 18, 18, 6, 14, 4, 1)
+    rgb(3, 232, 48, 48, 6, 2, 4, 1)
+    rgb(3, 232, 48, 48, 5, 3, 6, 1)
+    rgb(3, 232, 48, 48, 4, 4, 8, 1)
+    rgb(3, 232, 48, 48, 3, 5, 10, 2)
+    rgb(2, 255, 255, 255, 3, 9, 10, 2)
+    rgb(2, 255, 255, 255, 4, 11, 8, 1)
+    rgb(2, 255, 255, 255, 5, 12, 6, 1)
+    rgb(2, 255, 255, 255, 6, 13, 4, 1)
+    rgb(4, 18, 18, 18, 2, 7, 12, 2)
+    rgb(4, 18, 18, 18, 6, 6, 4, 4)
+    rgb(1, 255, 255, 255, 7, 7, 2, 2)
   end
 
   local CUSTOM_KEY_ICONS = {
@@ -848,16 +845,17 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     GOOD_ROD = true, SUPER_ROD = true,
   }
 
-  local function drawCustomKeyItemIcon(id, x, y)
+  local function drawCustomKeyItemIcon(id, x, y, trueColorZones)
     if not CUSTOM_KEY_ICONS[id] then return false end
     x, y = math.floor(x), math.floor(y)
     local function rect(color, rx, ry, rw, rh)
       love.graphics.setColor(color[1] / 255, color[2] / 255,
         color[3] / 255, 1)
       love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
-      if not (type(usesOgEnginePalette) == "function"
-          and usesOgEnginePalette()) then
-        PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      if trueColorZones then
+        trueColorZones[#trueColorZones + 1] = {
+          colors = false, x = x + rx, y = y + ry, w = rw, h = rh,
+        }
       end
     end
     local black = { 18, 18, 18 }
@@ -937,24 +935,110 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     return true
   end
 
-  local function drawPocketSymbol(key, x, y, size)
+  local KEY_ICON_FILL_MASK = {
+    "..................",
+    "...WWW............",
+    "..WWWWW...........",
+    ".WW..WWW..........",
+    ".W....WW..........",
+    ".W....WWWWWWWWWWW.",
+    ".WW..WWW....W..W..",
+    "..WWWWW.....W...W.",
+    "...WWW............",
+    "..................",
+  }
+
+  local function keyIconFillAt(column, row)
+    local line = KEY_ICON_FILL_MASK[row + 1]
+    return line and line:sub(column + 1, column + 1) == "W"
+  end
+
+  local function drawKeyIconMask(x, y, outlinePixel, fillPixel)
+    for row = 0, #KEY_ICON_FILL_MASK - 1 do
+      for column = 0, #KEY_ICON_FILL_MASK[row + 1] - 1 do
+        if not keyIconFillAt(column, row) then
+          local bordersFill = false
+          for dy = -1, 1 do
+            for dx = -1, 1 do
+              bordersFill = bordersFill
+                or keyIconFillAt(column + dx, row + dy)
+            end
+          end
+          if bordersFill then outlinePixel(x + column, y + row) end
+        end
+      end
+    end
+    for row, line in ipairs(KEY_ICON_FILL_MASK) do
+      for column = 1, #line do
+        if line:sub(column, column) == "W" then
+          fillPixel(x + column - 1, y + row - 1)
+        end
+      end
+    end
+  end
+
+  local function drawBattleSymbol(x, y, size, lightRect, darkRect)
+    local unit = math.max(1, math.floor(size / 8))
+    lightRect(x + 3 * unit, y, 2 * unit, size)
+    lightRect(x, y + 3 * unit, size, 2 * unit)
+    darkRect(x + 2 * unit, y + 2 * unit, 4 * unit, 4 * unit)
+  end
+
+  local function drawPocketSymbol(key, x, y, size, trueColorZones)
     x, y, size = math.floor(x), math.floor(y), math.max(8, math.floor(size))
     local unit = math.max(1, math.floor(size / 8))
+    local function markRect(rx, ry, rw, rh)
+      if trueColorZones then
+        trueColorZones[#trueColorZones + 1] = {
+          colors = false, x = rx, y = ry, w = rw, h = rh,
+        }
+      end
+    end
+    local function fillRect(rx, ry, rw, rh)
+      love.graphics.rectangle("fill", rx, ry, rw, rh)
+      markRect(rx, ry, rw, rh)
+    end
+    local function lineRect(rx, ry, rw, rh)
+      love.graphics.rectangle("line", rx, ry, rw, rh)
+      markRect(rx, ry, rw + 1, 1)
+      markRect(rx, ry + rh, rw + 1, 1)
+      markRect(rx, ry + 1, 1, math.max(0, rh - 1))
+      markRect(rx + rw, ry + 1, 1, math.max(0, rh - 1))
+    end
+    local function circle(mode, cx, cy, radius)
+      love.graphics.circle(mode, cx, cy, radius)
+      if not trueColorZones then return end
+      local outer = math.floor(radius)
+      local inner = mode == "line" and math.max(0, outer - 1) or 0
+      for dy = -outer, outer do
+        local span = math.floor(math.sqrt(math.max(0,
+          radius * radius - dy * dy)))
+        if mode == "fill" then
+          markRect(math.floor(cx - span), math.floor(cy + dy),
+            span * 2 + 1, 1)
+        else
+          local innerSpan = math.floor(math.sqrt(math.max(0,
+            inner * inner - math.min(inner * inner, dy * dy))))
+          local edge = math.max(1, span - innerSpan + 1)
+          markRect(math.floor(cx - span), math.floor(cy + dy), edge, 1)
+          markRect(math.floor(cx + span - edge + 1),
+            math.floor(cy + dy), edge, 1)
+        end
+      end
+    end
     if key == "all" then
       gray(DARK)
-      love.graphics.rectangle("line", x + 2 * unit, y + unit,
-        size - 4 * unit, 3 * unit)
-      love.graphics.rectangle("fill", x, y + 3 * unit,
+      lineRect(x + 2 * unit, y + unit, size - 4 * unit, 3 * unit)
+      fillRect(x, y + 3 * unit, 2 * unit, size - 4 * unit)
+      fillRect(x + size - 2 * unit, y + 3 * unit,
         2 * unit, size - 4 * unit)
-      love.graphics.rectangle("fill", x + size - 2 * unit, y + 3 * unit,
-        2 * unit, size - 4 * unit)
-      love.graphics.rectangle("fill", x + 2 * unit, y + 2 * unit,
+      fillRect(x + 2 * unit, y + 2 * unit,
         size - 4 * unit, size - 2 * unit)
       gray(LIGHT)
-      love.graphics.rectangle("fill", x + 3 * unit, y + 3 * unit,
+      fillRect(x + 3 * unit, y + 3 * unit,
         size - 6 * unit, size - 4 * unit)
       gray(DARK)
-      love.graphics.rectangle("line", x + 3 * unit, y + 5 * unit,
+      lineRect(x + 3 * unit, y + 5 * unit,
         size - 6 * unit, 2 * unit)
     elseif key == "items" then
       gray(LIGHT)
@@ -962,116 +1046,87 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
         love.graphics.polygon("fill", x + size / 2, y,
           x + size, y + size / 2, x + size / 2, y + size,
           x, y + size / 2)
+        if trueColorZones then
+          for dy = 0, size do
+            local half = math.floor(math.min(dy, size - dy))
+            markRect(x + math.floor(size / 2) - half, y + dy,
+              half * 2 + 1, 1)
+          end
+        end
       else
-        love.graphics.rectangle("fill", x + unit, y + unit,
-          size - 2 * unit, size - 2 * unit)
+        fillRect(x + unit, y + unit, size - 2 * unit, size - 2 * unit)
       end
       gray(DARK)
-      love.graphics.rectangle("fill", x + size / 2 - unit / 2,
+      fillRect(x + size / 2 - unit / 2,
         y + 2 * unit, unit, size - 4 * unit)
     elseif key == "medicine" then
       gray(DARK)
-      love.graphics.rectangle("fill", x + 3 * unit, y,
-        size - 6 * unit, 2 * unit)
+      fillRect(x + 3 * unit, y, size - 6 * unit, 2 * unit)
       gray(LIGHT)
-      love.graphics.rectangle("fill", x + 2 * unit, y + 2 * unit,
+      fillRect(x + 2 * unit, y + 2 * unit,
         size - 4 * unit, size - 2 * unit)
       gray(BLACK)
       local crossX = x + math.floor((size - 3 * unit) / 2)
       local stemX = x + math.floor((size - unit) / 2)
-      love.graphics.rectangle("fill", crossX, y + 4 * unit,
-        3 * unit, unit)
-      love.graphics.rectangle("fill", stemX,
-        y + 3 * unit, unit, 3 * unit)
+      fillRect(crossX, y + 4 * unit, 3 * unit, unit)
+      fillRect(stemX, y + 3 * unit, unit, 3 * unit)
     elseif key == "balls" then
       drawClassicPokeBall16(
         x + math.floor((size - 16) / 2),
-        y + math.floor((size - 16) / 2))
+        y + math.floor((size - 16) / 2), trueColorZones)
     elseif key == "battle" then
-      gray(LIGHT)
-      love.graphics.rectangle("fill", x + 3 * unit, y,
-        2 * unit, size)
-      love.graphics.rectangle("fill", x, y + 3 * unit,
-        size, 2 * unit)
-      gray(DARK)
-      love.graphics.rectangle("fill", x + 2 * unit, y + 2 * unit,
-        4 * unit, 4 * unit)
+      drawBattleSymbol(x, y, size, function(rx, ry, rw, rh)
+        gray(LIGHT)
+        fillRect(rx, ry, rw, rh)
+      end, function(rx, ry, rw, rh)
+        gray(DARK)
+        fillRect(rx, ry, rw, rh)
+      end)
     elseif key == "machines" then
       gray(LIGHT)
-      love.graphics.circle("fill", x + size / 2, y + size / 2, size / 2)
+      circle("fill", x + size / 2, y + size / 2, size / 2)
       gray(DARK)
-      love.graphics.circle("fill", x + size / 2, y + size / 2, 3 * unit)
+      circle("fill", x + size / 2, y + size / 2, 3 * unit)
       gray(BLACK)
-      love.graphics.circle("fill", x + size / 2, y + size / 2, unit)
+      circle("fill", x + size / 2, y + size / 2, unit)
     elseif key == "key" then
-      gray(LIGHT)
-      love.graphics.circle("line", x + 2 * unit, y + 2 * unit, 2 * unit)
-      love.graphics.rectangle("fill", x + 3 * unit, y + 3 * unit,
-        size - 3 * unit, 2 * unit)
-      love.graphics.rectangle("fill", x + 6 * unit, y + 5 * unit,
-        2 * unit, 2 * unit)
+      local keyX = x + math.floor((size - 18) / 2)
+      local keyY = y + math.floor((size - 10) / 2)
+      drawKeyIconMask(keyX, keyY, function(px, py)
+        gray(BLACK)
+        fillRect(px, py, 1, 1)
+      end, function(px, py)
+        love.graphics.setColor(94 / 255, 214 / 255, 236 / 255, 1)
+        fillRect(px, py, 1, 1)
+      end)
     elseif key == "berries" then
       gray(LIGHT)
-      love.graphics.circle("fill", x + size / 2, y + size / 2 + unit,
-        3 * unit)
+      circle("fill", x + size / 2, y + size / 2 + unit, 3 * unit)
       gray(DARK)
-      love.graphics.rectangle("fill", x + 4 * unit, y,
-        unit, 3 * unit)
-      love.graphics.rectangle("fill", x + 5 * unit, y + unit,
-        2 * unit, unit)
+      fillRect(x + 4 * unit, y, unit, 3 * unit)
+      fillRect(x + 5 * unit, y + unit, 2 * unit, unit)
       gray(BLACK)
-      love.graphics.rectangle("fill", x + 3 * unit, y + 4 * unit,
-        unit, unit)
+      fillRect(x + 3 * unit, y + 4 * unit, unit, unit)
     end
   end
 
-  local HEADER_ICON_COLORS = {
-    all = {
-      { 232, 240, 255 }, { 132, 148, 255 }, { 24, 40, 206 }, { 10, 12, 24 },
-    },
-    items = {
-      { 255, 232, 176 }, { 255, 190, 64 }, { 242, 112, 16 }, { 36, 20, 12 },
-    },
-    medicine = {
-      { 226, 255, 218 }, { 120, 246, 82 }, { 28, 174, 62 }, { 10, 28, 14 },
-    },
-    machines = {
-      { 250, 222, 255 }, { 210, 112, 242 }, { 154, 28, 190 }, { 30, 8, 36 },
-    },
-    key = {
-      { 220, 252, 255 }, { 94, 214, 236 }, { 8, 150, 190 }, { 6, 28, 34 },
-    },
-  }
-
-  -- Fixed 16x16 header glyphs. Every color is owned by this icon definition,
-  -- independent of the menu palette selected for the surrounding screen.
+  -- Fixed 16x16 header glyphs emit canonical four-shade source indices. The
+  -- centralized menu-palette pass owns their final colors.
   local function drawHeaderPocketIcon(menu, pocket, x, y)
     x, y = math.floor(x), math.floor(y)
-    local palette = HEADER_ICON_COLORS[pocket.key]
-      or HEADER_ICON_COLORS.key
     local function shade(index)
-      if type(usesOgEnginePalette) == "function"
-          and usesOgEnginePalette() then
-        gray(({ WHITE, LIGHT, DARK, BLACK })[index] or BLACK)
-        return
-      end
-      local color = palette and palette[index]
-      if color then
-        love.graphics.setColor(color[1] / 255, color[2] / 255,
-          color[3] / 255, 1)
-      else
-        gray(({ WHITE, LIGHT, DARK, BLACK })[index] or BLACK)
-      end
+      gray(({ WHITE, LIGHT, DARK, BLACK })[index] or BLACK)
     end
     local function rect(index, rx, ry, rw, rh)
       shade(index)
       love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
+      local zones = menu.modernBagHeaderIconZones
+      if zones then
+        zones[#zones + 1] = {
+          x = x + rx, y = y + ry, w = rw, h = rh,
+        }
+      end
     end
-    local function rgb(red, green, blue, rx, ry, rw, rh)
-      love.graphics.setColor(red / 255, green / 255, blue / 255, 1)
-      love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
-    end
-
     local key = pocket.key
     if key == "all" then
       rect(4, 3, 1, 10, 2)
@@ -1093,12 +1148,11 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       rect(4, 5, 11, 6, 1)
       rect(4, 6, 12, 4, 1)
       rect(4, 7, 13, 2, 1)
-      rect(3, 7, 4, 2, 1)
-      rect(3, 6, 5, 4, 1)
-      rect(3, 5, 6, 6, 3)
+      rect(1, 7, 4, 2, 1)
+      rect(1, 6, 5, 4, 1)
+      rect(2, 5, 6, 6, 3)
       rect(3, 6, 9, 4, 1)
       rect(3, 7, 10, 2, 1)
-      rect(2, 7, 7, 2, 3)
     elseif key == "medicine" then
       rect(3, 5, 1, 6, 2)
       rect(2, 4, 3, 8, 12)
@@ -1106,41 +1160,43 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       rect(4, 7, 6, 2, 6)
       rect(4, 5, 8, 6, 2)
     elseif key == "balls" then
-      -- Classic Poké Ball, independent of the selected menu palette.
-      drawClassicPokeBall16(x, y)
+      -- The header Poké Ball participates in the active menu palette.
+      drawClassicPokeBall16(x, y, nil, function(index, rx, ry, rw, rh)
+        rect(index, rx, ry, rw, rh)
+      end)
+    elseif key == "battle" then
+      drawBattleSymbol(x, y, 16, function(rx, ry, rw, rh)
+        rect(2, rx - x, ry - y, rw, rh)
+      end, function(rx, ry, rw, rh)
+        rect(3, rx - x, ry - y, rw, rh)
+      end)
+      rect(1, 7, 1, 2, 3)
+      rect(4, 7, 12, 2, 3)
     elseif key == "machines" then
-      rect(2, 5, 1, 6, 1)
-      rect(2, 3, 2, 10, 2)
-      rect(2, 2, 4, 12, 8)
-      rect(2, 4, 12, 8, 2)
-      rect(3, 5, 5, 6, 6)
-      rect(4, 7, 7, 2, 2)
+      -- Concentric four-shade bullseye for the TM/HM pocket.
+      rect(4, 6, 1, 4, 1)
+      rect(4, 4, 2, 8, 1)
+      rect(4, 3, 3, 10, 2)
+      rect(4, 2, 5, 12, 6)
+      rect(4, 3, 11, 10, 2)
+      rect(4, 4, 13, 8, 1)
+      rect(4, 6, 14, 4, 1)
+      rect(2, 6, 2, 4, 1)
+      rect(2, 4, 3, 8, 2)
+      rect(2, 3, 5, 10, 6)
+      rect(2, 4, 11, 8, 2)
+      rect(2, 6, 13, 4, 1)
+      rect(3, 6, 5, 4, 1)
+      rect(3, 5, 6, 6, 4)
+      rect(3, 6, 10, 4, 1)
+      rect(2, 7, 7, 2, 2)
     else -- MISC / key items
-      -- Recognizable horizontal key: round bow, inset hole, shaft and teeth.
-      rgb(6, 28, 34, 3, 2, 5, 1)
-      rgb(6, 28, 34, 2, 3, 7, 2)
-      rgb(6, 28, 34, 1, 5, 9, 5)
-      rgb(6, 28, 34, 2, 10, 7, 2)
-      rgb(6, 28, 34, 3, 12, 5, 1)
-      rgb(6, 28, 34, 8, 6, 7, 5)
-      rgb(6, 28, 34, 12, 10, 3, 3)
-      rgb(6, 28, 34, 10, 10, 2, 2)
-      rgb(8, 150, 190, 3, 3, 4, 2)
-      rgb(8, 150, 190, 2, 5, 6, 5)
-      rgb(8, 150, 190, 3, 10, 4, 2)
-      rgb(8, 150, 190, 7, 7, 7, 3)
-      rgb(8, 150, 190, 12, 10, 2, 2)
-      rgb(94, 214, 236, 3, 4, 3, 1)
-      rgb(220, 252, 255, 3, 6, 3, 3)
-      rgb(6, 28, 34, 4, 7, 2, 1)
+      drawKeyIconMask(x - 1, y + 3, function(px, py)
+        rect(4, px - x, py - y, 1, 1)
+      end, function(px, py)
+        rect(3, px - x, py - y, 1, 1)
+      end)
     end
-	if key ~= "balls"
-		and not (
-		  type(usesOgEnginePalette) == "function"
-		  and usesOgEnginePalette()
-		) then
-	  PaletteFX.markTrueColor(x, y, 16, 16)
-	end
   end
 
   local function drawBackdrop(layout)
@@ -1210,36 +1266,49 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
 
   local function drawTabs(menu, layout, counts)
     gray(LIGHT)
-    love.graphics.rectangle("fill", 0, layout.tabsY, layout.width, layout.tabsH)
+    love.graphics.rectangle("fill", 0, layout.tabsY,
+      layout.width, layout.tabsH)
     local pockets = pocketsFor(menu)
     local slotW = math.floor(layout.width / #pockets)
     local tileW = math.min(28, slotW - 4)
     local tileH = 18
+    local flashPhase = math.floor((menu.modernBagHeaderFlash or 0) / 60)
+    local selectedDark = flashPhase == 0 or flashPhase == 2
+      or flashPhase >= 4
+
+    local function recordBorder(x, y, width, height)
+      local zones = menu.modernBagHeaderBorderZones
+      if not zones then return end
+      local function add(rx, ry, rw, rh)
+        zones[#zones + 1] = { x = rx, y = ry, w = rw, h = rh }
+      end
+      add(x + 2, y, width - 4, 1)
+      add(x + 1, y + 1, 1, 1)
+      add(x + width - 2, y + 1, 1, 1)
+      add(x, y + 2, 1, height - 4)
+      add(x + width - 1, y + 2, 1, height - 4)
+      add(x + 1, y + height - 2, 1, 1)
+      add(x + width - 2, y + height - 2, 1, 1)
+      add(x + 2, y + height - 1, width - 4, 1)
+    end
 
     for index, pocket in ipairs(pockets) do
       local slotX = (index - 1) * slotW
       local x = slotX + math.floor((slotW - tileW) / 2)
       local y = layout.tabsY - 1
       local active = index == menu.modernBagPocket
-      if active then
-        gray(BLACK)
-        pixelRoundFill(x, y, tileW, tileH)
-        gray(WHITE)
-        pixelRoundFill(x + 1, y + 1, tileW - 2, tileH - 2)
-      else
-        gray(WHITE)
-        pixelRoundFill(x, y, tileW, tileH)
-      end
-      -- Register the tile before its icon so the icon's later true-colour
-      -- region remains the topmost preservation zone.
-      markPixelRoundTrueColor(x, y, tileW, tileH)
+      gray(active and selectedDark and BLACK or DARK)
+      pixelRoundFill(x, y, tileW, tileH)
+      recordBorder(x, y, tileW, tileH)
+      gray(WHITE)
+      pixelRoundFill(x + 1, y + 1, tileW - 2, tileH - 2)
       drawHeaderPocketIcon(menu, pocket,
         x + math.floor((tileW - 16) / 2), y + 1)
     end
   end
 
   local function drawList(menu, layout)
-    gray(WHITE)
+    gray(DARK)
     pixelRoundFill(layout.listX, layout.listY,
       layout.listW, layout.listH)
     gray(LIGHT)
@@ -1258,23 +1327,28 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       return
     end
 
-    for row = 1, layout.rows do
+    local visibleRows = math.min(layout.rows,
+      math.max(0, #menu.items - menu.scroll))
+    local stackH = (visibleRows - 1) * ROW_H + 12
+    local stackY = layout.listY + math.floor((layout.listH - stackH) / 2)
+
+    for row = 1, visibleRows do
       local index = menu.scroll + row
       local item = menu.items[index]
       if not item then break end
-      local y = layout.listY + 4 + (row - 1) * ROW_H
+      local y = stackY + 1 + (row - 1) * ROW_H
       local selected = index == menu.index
       if selected then
         gray(BLACK)
-        chamfer("fill", layout.listX + 4, y - 1,
-          layout.listW - 8, 13, 2)
+        pixelRoundFill(layout.listX + 4, y - 1,
+          layout.listW - 8, 12)
         gray(DARK)
-        chamfer("fill", layout.listX + 5, y,
-          layout.listW - 10, 11, 2)
-      elseif row % 2 == 0 then
+        pixelRoundFill(layout.listX + 5, y,
+          layout.listW - 10, 10)
+      else
         gray(WHITE)
-        love.graphics.rectangle("fill", layout.listX + 5, y - 1,
-          layout.listW - 10, 13)
+        pixelRoundFill(layout.listX + 4, y - 1,
+          layout.listW - 8, 12)
       end
 
       local shade = selected and WHITE or BLACK
@@ -1293,55 +1367,65 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
 
     if menu.scroll > 0 then
       gray(DARK)
+      local centerX = layout.listX + math.floor(layout.listW / 2)
+      local baseY = stackY - 1
       if love.graphics.polygon then
-        love.graphics.polygon("fill", layout.listX + layout.listW - 8,
-          layout.listY + 4, layout.listX + layout.listW - 4,
-          layout.listY + 4, layout.listX + layout.listW - 6,
-          layout.listY + 1)
+        love.graphics.polygon("fill", centerX - 2, baseY,
+          centerX + 2, baseY, centerX, baseY - 3)
       else
-        love.graphics.rectangle("fill", layout.listX + layout.listW - 7,
-          layout.listY + 2, 3, 2)
+        love.graphics.rectangle("fill", centerX - 1, baseY - 2, 3, 2)
       end
     end
-    if menu.scroll + layout.rows < #menu.items then
+    if menu.scroll + visibleRows < #menu.items then
       gray(DARK)
+      local centerX = layout.listX + math.floor(layout.listW / 2)
+      local arrowY = stackY + stackH + 1
       if love.graphics.polygon then
-        love.graphics.polygon("fill", layout.listX + layout.listW - 8,
-          layout.listY + layout.listH - 4, layout.listX + layout.listW - 4,
-          layout.listY + layout.listH - 4, layout.listX + layout.listW - 6,
-          layout.listY + layout.listH - 1)
+        love.graphics.polygon("fill", centerX - 2, arrowY,
+          centerX + 2, arrowY, centerX, arrowY + 3)
       else
-        love.graphics.rectangle("fill", layout.listX + layout.listW - 7,
-          layout.listY + layout.listH - 3, 3, 2)
+        love.graphics.rectangle("fill", centerX - 1, arrowY + 1, 3, 2)
       end
     end
   end
 
-  local function itemDescription(menu, id)
-    if not id then return Strings("Return to the previous screen.") end
-    local def = menu.game.data.items[id] or {}
-    if type(def.description) == "string" and def.description ~= "" then
-      return Strings(def.description)
+  local function withoutSingleSentencePeriod(description)
+    if type(description) ~= "string" or description:sub(-1) ~= "." then
+      return description
     end
-    if DESCRIPTIONS[id] then return Strings(DESCRIPTIONS[id]) end
-    if def.machine then
+    if description:sub(1, -2):find("[.!?]%s") then return description end
+    return description:sub(1, -2)
+  end
+
+  local function itemDescription(menu, id)
+    if not id then return Strings("Return to the previous screen") end
+    local def = menu.game.data.items[id] or {}
+    local description
+    if type(def.description) == "string" and def.description ~= "" then
+      description = Strings(def.description)
+    elseif DESCRIPTIONS[id] then
+      description = Strings(DESCRIPTIONS[id])
+    elseif def.machine then
       local move = menu.game.data.moves and menu.game.data.moves[def.machine.move]
       local moveName = move and move.name or def.machine.move
-      return Strings("Teaches %s to a compatible POKéMON.", moveName)
+      description = Strings("Teaches %s to a compatible POKéMON.", moveName)
+    else
+      local category = categoryFor(menu.game, id)
+      if category == "balls" then
+        description = Strings("A device for catching wild POKéMON.")
+      elseif category == "medicine" then
+        description = Strings("A medicine used to help a POKéMON.")
+      elseif category == "battle" then
+        description = Strings("An item intended for use in battle.")
+      elseif category == "key" then
+        description = Strings("An important item for your adventure.")
+      elseif category == "berries" then
+        description = Strings("A Berry that a POKéMON can use or hold.")
+      else
+        description = Strings("A useful item for your journey.")
+      end
     end
-    local category = categoryFor(menu.game, id)
-    if category == "balls" then
-      return Strings("A device for catching wild POKéMON.")
-    elseif category == "medicine" then
-      return Strings("A medicine used to help a POKéMON.")
-    elseif category == "battle" then
-      return Strings("An item intended for use in battle.")
-    elseif category == "key" then
-      return Strings("An important item for your adventure.")
-    elseif category == "berries" then
-      return Strings("A Berry that a POKéMON can use or hold.")
-    end
-    return Strings("A useful item for your journey.")
+    return withoutSingleSentencePeriod(description)
   end
 
   local function drawDetails(menu, layout)
@@ -1359,8 +1443,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       local item = menu.items[menu.index]
       local config = listConfig(menu)
       local caption = config and config.direction
-        or (item and categoryFor(menu.game, item.value) or pocket.key)
-      if not (item and CUSTOM_KEY_ICONS[item.value]) then
+      if caption then
         drawText(caption:upper(), layout.detailX + 6, layout.detailY + 5,
           math.floor(layout.detailW * 0.58), DARK)
       end
@@ -1375,8 +1458,10 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       local iconX, iconY = layout.detailX + 8, layout.detailY + 20
       if not (item and drawCustomKeyItemIcon(item.value,
           iconX + math.floor((iconSize - 20) / 2),
-          iconY + math.floor((iconSize - 20) / 2))) then
-        drawPocketSymbol(category, iconX, iconY, iconSize)
+          iconY + math.floor((iconSize - 20) / 2),
+          menu.modernBagIconZones)) then
+        drawPocketSymbol(category, iconX, iconY, iconSize,
+          menu.modernBagIconZones)
       end
       local textX = layout.detailX + iconSize + 14
       local textW = layout.detailX + layout.detailW - 6 - textX
@@ -1404,18 +1489,16 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     gray(DARK)
     pixelRoundFill(layout.detailX, layout.detailY,
       layout.detailW, layout.detailH)
-    gray(BLACK)
+    gray(WHITE)
     pixelRoundFill(layout.detailX + 2, layout.detailY + 2,
       layout.detailW - 4, layout.detailH - 4)
 
     local item = menu.items[menu.index]
     local config = listConfig(menu)
     local caption = config and config.direction
-      or (item and categoryFor(menu.game, item.value) or pocket.key)
-    caption = caption:upper()
-    if not (item and CUSTOM_KEY_ICONS[item.value]) then
-      drawText(caption, layout.detailX + 6, layout.detailY + 5,
-        layout.detailW - 12, LIGHT)
+    if caption then
+      drawText(caption:upper(), layout.detailX + 6, layout.detailY + 5,
+        layout.detailW - 12, BLACK)
     end
 
     if item then
@@ -1429,18 +1512,20 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
         -- larger generic 24px wrapper—and leaves a full 15px before the name.
         iconX = layout.detailX + math.floor((layout.detailW - 20) / 2)
         iconY = layout.detailY + 10
-        drawCustomKeyItemIcon(item.value, iconX, iconY)
+        drawCustomKeyItemIcon(item.value, iconX, iconY,
+          menu.modernBagIconZones)
       else
         iconX = layout.detailX + math.floor((layout.detailW - iconSize) / 2)
         iconY = layout.detailY + 17
-        drawPocketSymbol(category, iconX, iconY, iconSize)
+        drawPocketSymbol(category, iconX, iconY, iconSize,
+          menu.modernBagIconZones)
       end
       local nameLines = wrappedLines(item.label, layout.detailW - 12, 2)
       for index, line in ipairs(nameLines) do
         drawText(line,
           layout.detailX + (layout.detailW - Font.width(line)) / 2,
           layout.detailY + 45 + (index - 1) * 9,
-          layout.detailW - 12, WHITE)
+          layout.detailW - 12, BLACK)
       end
       local descriptionY = layout.detailY + 58
         + math.max(0, #nameLines - 1) * 9
@@ -1457,26 +1542,26 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       for index, line in ipairs(lines) do
         drawText(line, layout.detailX + 6,
           descriptionY + (index - 1) * 9,
-          layout.detailW - 12, LIGHT)
+          layout.detailW - 12, BLACK)
       end
     else
       drawPocketSymbol(pocket.key,
         layout.detailX + math.floor((layout.detailW - 28) / 2),
-        layout.detailY + 20, 28)
+        layout.detailY + 20, 28, menu.modernBagIconZones)
       local lines = wrappedLines(
         Strings(config and config.blurb or pocket.blurb),
         layout.detailW - 12, 3)
       for index, line in ipairs(lines) do
         drawText(line, layout.detailX + 6,
           layout.detailY + 58 + (index - 1) * 9,
-          layout.detailW - 12, LIGHT)
+          layout.detailW - 12, BLACK)
       end
     end
 
     if not config then
       local status = ("¥%d"):format(menu.game.save.money or 0)
       drawTextRight(status, layout.detailX + layout.detailW - 6,
-        layout.detailY + layout.detailH - 11, layout.detailW - 12, WHITE)
+        layout.detailY + layout.detailH - 11, layout.detailW - 12, BLACK)
     end
   end
 
@@ -1919,6 +2004,9 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       return
     end
     local counts = pocketCounts(menu)
+    menu.modernBagIconZones = {}
+    menu.modernBagHeaderIconZones = {}
+    menu.modernBagHeaderBorderZones = {}
     drawBackdrop(layout)
     drawHeader(menu, layout)
     drawTabs(menu, layout, counts)
@@ -1976,7 +2064,34 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       colors = base, x = 0, y = 0,
       w = layout.width, h = layout.canvasHeight or layout.height,
     }}
-    roundedPaletteZones(zones, stable, layout.listX, layout.listY,
+    local paper = type(menuPaperPalette) == "function"
+      and menuPaperPalette(game) or nil
+    if paper then
+      local pockets = pocketsFor(menu)
+      local slotW = math.floor(layout.width / #pockets)
+      local tileW = math.min(28, slotW - 4)
+      for index = 1, #pockets do
+        local slotX = (index - 1) * slotW
+        local tileX = slotX + math.floor((slotW - tileW) / 2)
+        roundedPaletteZones(zones, paper, tileX, layout.tabsY - 1,
+          tileW, 18)
+      end
+    end
+    for _, iconZone in ipairs(menu.modernBagHeaderIconZones or {}) do
+      zones[#zones + 1] = {
+        colors = base,
+        x = iconZone.x, y = iconZone.y,
+        w = iconZone.w, h = iconZone.h,
+      }
+    end
+    for _, borderZone in ipairs(menu.modernBagHeaderBorderZones or {}) do
+      zones[#zones + 1] = {
+        colors = base,
+        x = borderZone.x, y = borderZone.y,
+        w = borderZone.w, h = borderZone.h,
+      }
+    end
+    roundedPaletteZones(zones, base, layout.listX, layout.listY,
       layout.listW, layout.listH)
 
     local pocket = pocketFor(menu)
@@ -1986,22 +2101,52 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     local details = config and config.modePalette
       and PaletteFX.pal(data, config.modePalette) or accent
     if layout.showDetails then
-      roundedPaletteZones(zones, details, layout.detailX, layout.detailY,
+      roundedPaletteZones(zones, base, layout.detailX, layout.detailY,
         layout.detailW, layout.detailH)
+      roundedPaletteZones(zones, paper or details,
+        layout.detailX + 2, layout.detailY + 2,
+        layout.detailW - 4, layout.detailH - 4)
     end
-    if #menu.items > 0 then
+    local visibleRows = math.min(layout.rows,
+      math.max(0, #menu.items - menu.scroll))
+    local stackH = visibleRows > 0 and ((visibleRows - 1) * ROW_H + 12) or 0
+    local stackY = layout.listY + math.floor((layout.listH - stackH) / 2)
+    for row = 1, visibleRows do
+      local index = menu.scroll + row
+      if not menu.items[index] then break end
+      local rowPalette = index == menu.index and base or paper
+      if rowPalette then
+        roundedPaletteZones(zones, rowPalette,
+          layout.listX + 4,
+          stackY + (row - 1) * ROW_H,
+          layout.listW - 8, 12)
+      end
+    end
+    if menu.scroll > 0 then
+      local centerX = layout.listX + math.floor(layout.listW / 2)
+      local baseY = stackY - 1
       zones[#zones + 1] = {
-        colors = accent,
-        x = layout.listX + 5,
-        y = layout.listY + 4 + (menu.index - menu.scroll - 1) * ROW_H,
-        w = layout.listW - 10, h = 11,
+        colors = base,
+        x = centerX - 2, y = baseY - 3, w = 5, h = 4,
       }
+    end
+    if menu.scroll + visibleRows < #menu.items then
+      local centerX = layout.listX + math.floor(layout.listW / 2)
+      zones[#zones + 1] = {
+        colors = base,
+        x = centerX - 2, y = stackY + stackH + 1, w = 5, h = 4,
+      }
+    end
+    for _, zone in ipairs(menu.modernBagIconZones or {}) do
+      zones[#zones + 1] = zone
     end
     return zones
   end
 
   local function update(menu, dt)
     menu.marquee = (menu.marquee or 0) + 1
+    menu.modernBagHeaderFlash = math.min(
+      (menu.modernBagHeaderFlash or 0) + 1, 240)
     local layout = layoutFor(menu)
     menu.rows = layout.rows
     clampList(menu)

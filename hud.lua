@@ -51,6 +51,12 @@ return function(mod, menuColors, useStockOgMenuPalette)
     return not ok or value == nil or value == true
   end
 
+  local function battleOwnsUiPass(battle)
+    local stack = battle and battle.game and battle.game.stack
+    return not (stack and type(stack.top) == "function")
+      or stack:top() == battle
+  end
+
   local function wideLayout(battle)
     if not (battle and type(battle.wideLayout) == "function") then
       return false
@@ -263,7 +269,8 @@ return function(mod, menuColors, useStockOgMenuPalette)
       hp = shownHP(battler),
       stats = battler.mon.stats,
     }, barType, grayFill == true, segments)
-    if markColor ~= false and not useStockOgMenuPalette(battle.game) then
+    if markColor ~= false and battleOwnsUiPass(battle)
+        and not useStockOgMenuPalette(battle.game) then
       PaletteFX.markTrueColor(tx * 8, ty * 8, (segments + 3) * 8, 8)
     end
   end
@@ -472,6 +479,7 @@ local function drawExpProgress(battle, battler, x, y, width, barY,
   local fill, state = advanceExpDisplay(battle, maxPixels)
   local meter = sharedMeter or meterGeometry(x + 15, maxPixels)
   local exemptFromPalette = markColor ~= false
+    and battleOwnsUiPass(battle)
     and not useStockOgMenuPalette(battle.game)
 
   drawXpLabel(x, y)
@@ -536,6 +544,7 @@ end
   -- animations are composited.
   local function drawClassicExpFill(battle)
     if not playerVisible(battle) then return end
+    if not battleOwnsUiPass(battle) then return end
     if useStockOgMenuPalette(battle.game) then return end
     local fill, state = advanceExpDisplay(battle, 80)
     if fill <= 0 and state.stage ~= "glint" then return end
@@ -695,7 +704,8 @@ local function renderWideEnemy(battle, fx)
   drawCustomMeterFrame(meter, 18)
   drawSemanticHpFill(battle, battler, 11, meter, 19)
 
-  if not useStockOgMenuPalette(battle.game) then
+  if battleOwnsUiPass(battle)
+      and not useStockOgMenuPalette(battle.game) then
     local exemptionX, exemptionWidth = enemyHpExemptionRect()
     PaletteFX.markTrueColor(exemptionX + hudShake, 19,
       exemptionWidth, 2)
@@ -726,7 +736,8 @@ local function renderWidePlayer(battle)
   drawCustomMeterFrame(meter, 74)
   drawSemanticHpFill(battle, battler, 11, meter, 75)
 
-  if not useStockOgMenuPalette(battle.game) then
+  if battleOwnsUiPass(battle)
+      and not useStockOgMenuPalette(battle.game) then
     PaletteFX.markTrueColor(meter.bodyX, 75, meter.bodyWidth, 2)
   end
 

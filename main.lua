@@ -234,6 +234,48 @@ local PALETTES = {
   },
 }
 
+local PAPER_COLORS = {
+  soulsilver  = { 238, 244, 248 },
+  heartgold   = { 248, 242, 224 },
+  firered     = { 250, 238, 234 },
+  leafgreen   = { 241, 247, 235 },
+  crystal     = { 240, 246, 250 },
+  emerald     = { 239, 247, 241 },
+
+  amiga_wb    = { 238, 234, 226 },
+  amiga_dp    = { 235, 235, 244 },
+  c64         = { 232, 230, 246 },
+  spectrum    = { 240, 240, 240 },
+  cga         = { 242, 242, 242 },
+  apple2      = { 235, 246, 236 },
+  pocket      = { 236, 236, 236 },
+  gblight     = { 224, 242, 237 },
+  virtualboy  = { 248, 232, 228 },
+  amber       = { 247, 239, 220 },
+  phosphor    = { 234, 246, 234 },
+
+  plasma      = { 248, 238, 224 },
+  rainbow     = { 247, 241, 224 },
+  acid        = { 242, 246, 226 },
+  fuchsia     = { 247, 235, 243 },
+  sunset      = { 248, 237, 226 },
+  ocean       = { 232, 244, 247 },
+  forest      = { 237, 244, 230 },
+  lava        = { 248, 240, 222 },
+  ice         = { 239, 247, 249 },
+  candy       = { 248, 238, 243 },
+  vapor       = { 243, 237, 247 },
+  neon        = { 239, 244, 226 },
+  toxic       = { 240, 244, 225 },
+  sepia       = { 241, 233, 219 },
+  noir        = { 238, 238, 240 },
+  cherry      = { 248, 236, 236 },
+  midnight    = { 232, 235, 244 },
+  gold        = { 246, 239, 220 },
+  mint        = { 236, 247, 242 },
+  grape       = { 240, 235, 247 },
+}
+
 -- Yellow's CGB title colors.  The normal SGB title palettes deliberately use
 -- softer yellow, lavender, and pink shades; the Yellow title art instead uses
 -- the vivid CGBBasePalettes colors seen on the intended full-color title.
@@ -385,9 +427,22 @@ local function effectiveMenuPalette(game)
     return palette
   end
   local resolved = PaletteFX.effectiveColors(palette) or palette
-  return rawMenuPaletteCopy({
+  local inverse = {
     resolved[4], resolved[3], resolved[2], resolved[1],
-  })
+  }
+  return rawMenuPaletteCopy(inverse)
+end
+
+local function effectivePaperPalette(game)
+  if useStockOgMenuPalette(game) then return nil end
+  local palette = effectiveMenuPalette(game)
+  local id = activeMod and activeMod.options:get("palette") or "soulsilver"
+  local paper = PAPER_COLORS[id]
+  if type(palette) ~= "table" or type(paper) ~= "table" then return nil end
+  local surface = {
+    paper, palette[2], palette[3], palette[4],
+  }
+  return rawMenuPaletteCopy(surface)
 end
 
 local function wholeWide()
@@ -1904,9 +1959,55 @@ local function installSupportingScreens()
     return 8 + col * 144, 8 + row * 40
   end
 
+  local function addPaletteZoneOutside(zones, colors, rect, cutout)
+    if not cutout then
+      zones[#zones + 1] = {
+        colors = colors, x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+      }
+      return
+    end
+
+    local x1, y1 = rect.x, rect.y
+    local x2, y2 = x1 + rect.w, y1 + rect.h
+    local cx1, cy1 = cutout.x, cutout.y
+    local cx2, cy2 = cx1 + cutout.w, cy1 + cutout.h
+    local ix1, iy1 = math.max(x1, cx1), math.max(y1, cy1)
+    local ix2, iy2 = math.min(x2, cx2), math.min(y2, cy2)
+
+    if ix1 >= ix2 or iy1 >= iy2 then
+      zones[#zones + 1] = {
+        colors = colors, x = x1, y = y1, w = rect.w, h = rect.h,
+      }
+      return
+    end
+
+    local function add(x, y, w, h)
+      if w > 0 and h > 0 then
+        zones[#zones + 1] = {
+          colors = colors, x = x, y = y, w = w, h = h,
+        }
+      end
+    end
+
+    add(x1, y1, rect.w, iy1 - y1)
+    add(x1, iy2, rect.w, y2 - iy2)
+    add(x1, iy1, ix1 - x1, iy2 - iy1)
+    add(ix2, iy1, x2 - ix2, iy2 - iy1)
+  end
+
   makeWideState(PartyMenu)
   PartyMenu.sgbPalettes = function(self, game)
     local zones = wholeWide()
+    local submenuCutout
+    if self.submenu then
+      local n = #self.subItems
+      submenuCutout = {
+        x = (UI_TW - 11) * 8,
+        y = (17 - n * 2 - 1) * 8,
+        w = 11 * 8,
+        h = (n * 2 + 1) * 8,
+      }
+    end
     if not self.tmhm then
       local party = self.party or (game.save and game.save.party) or {}
       for i, mon in ipairs(party) do
@@ -1918,32 +2019,9 @@ local function installSupportingScreens()
         if bar then
           local barX = x + 5 * 8
           local barY = y + 19
-
-          local coveredBySubmenu = false
-
-          if self.submenu then
-            local n = #self.subItems
-            local menuX = (UI_TW - 11) * 8
-            local menuY = (17 - n * 2 - 1) * 8
-            local menuW = 11 * 8
-            local menuH = (n * 2 + 1) * 8
-
-            coveredBySubmenu =
-              barX < menuX + menuW
-              and barX + 4 * 8 > menuX
-              and barY < menuY + menuH
-              and barY + 2 > menuY
-          end
-
-          if not coveredBySubmenu then
-            zones[#zones + 1] = {
-              colors = bar,
-              x = barX,
-              y = barY,
-              w = 4 * 8,
-              h = 2,
-            }
-          end
+          addPaletteZoneOutside(zones, bar, {
+            x = barX, y = barY, w = 4 * 8, h = 2,
+          }, submenuCutout)
         end
       end
     end
@@ -2491,8 +2569,8 @@ return function(mod, menuColors)
         or nil,
     }
     local okBagScreen, modernBagScreen = pcall(
-      makeBagScreen, mod, bagCompatibility, effectiveMenuPalette, useStockOgMenuPalette,
-      usesOgEnginePalette)
+      makeBagScreen, mod, bagCompatibility, effectiveMenuPalette,
+      useStockOgMenuPalette, effectivePaperPalette)
     local okBagInventory, modernBagInventory = false, nil
     if okBagScreen and type(modernBagScreen) == "table"
         and type(modernBagScreen.new) == "function" then
