@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.0.32
+-- Gen1BetterMenus 1.1.0
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -79,6 +79,10 @@ local PALETTES = {
   ogred = PaletteFX.GBC_BG,
   ogredobj = PaletteFX.GBC_OBJ,
   ogblue = PaletteFX.GBC_BG_BLUE,
+  classic = PaletteFX.CLASSIC,
+  og = PaletteFX.GRAYS,
+  redpp = PaletteFX.GBC_OBJ,
+  gbc = PaletteFX.GBC_BG_BLUE,
 
   soulsilver = {
     { 248, 248, 248 }, { 168, 208, 232 },
@@ -243,21 +247,151 @@ local YELLOW_TITLE_PIKACHU = {
 }
 
 local activeMod
+local activeGame
 local LOCATION_OVERLAY_KEY = "__qolLocationBannerOverlay"
 local locationStates = setmetatable({}, { __mode = "k" })
 local locationOverlays = setmetatable({}, { __mode = "k" })
 
-local function colors()
+local OG_MENU_PALETTES = {
+  classic = true,
+  og = true,
+  ogred = true,
+  redpp = true,
+  gbc = true,
+}
+
+local OG_MENU_PALETTE_LABELS = {
+  classic = "CLASSIC",
+  og = "OG",
+  ogred = "OG RED",
+  redpp = "ADVANCED",
+  gbc = "SGB",
+}
+
+local function usesOgEnginePalette(game)
+  game = game or activeGame
+  if not game or not game.save or not game.save.options then
+    return false
+  end
+
+  local id = game.save.options.colors
+  return OG_MENU_PALETTES[id] == true
+end
+
+local function useStockOgMenuPalette(game)
+  if not activeMod then return false end
+  if activeMod.options:get("override_og_menu_palette") == true then
+    return false
+  end
+  return usesOgEnginePalette(game)
+end
+
+local function overrideOgMenuPalette(game)
+  game = game or activeGame
+  if not activeMod
+      or activeMod.options:get("override_og_menu_palette") ~= true
+      or not game or not game.save or not game.save.options then
+    return false
+  end
+  return OG_MENU_PALETTES[game.save.options.colors] == true
+end
+
+-- PaletteFX normally applies the engine's active display mode after a state
+-- supplies its zones. Under the explicit BetterMenus override, only cloned
+-- Modern Bag/PC zone palettes bypass that final substitution.
+PaletteFX.gen1BetterMenusRawZonePalettes =
+  PaletteFX.gen1BetterMenusRawZonePalettes
+  or setmetatable({}, { __mode = "k" })
+if not PaletteFX.gen1BetterMenusRawZoneHookInstalled then
+  local originalSendColors = PaletteFX.sendColors
+  local originalEffectiveColors = PaletteFX.effectiveColors
+  PaletteFX.sendColors = function(shader, palette)
+    if PaletteFX.gen1BetterMenusRawZonePalettes[palette] then
+      shader:send("c0", { palette[1][1] / 255,
+        palette[1][2] / 255, palette[1][3] / 255 })
+      shader:send("c1", { palette[2][1] / 255,
+        palette[2][2] / 255, palette[2][3] / 255 })
+      shader:send("c2", { palette[3][1] / 255,
+        palette[3][2] / 255, palette[3][3] / 255 })
+      shader:send("c3", { palette[4][1] / 255,
+        palette[4][2] / 255, palette[4][3] / 255 })
+      return
+    end
+    return originalSendColors(shader, palette)
+  end
+  PaletteFX.effectiveColors = function(palette, ...)
+    if PaletteFX.gen1BetterMenusRawZonePalettes[palette] then
+      return palette
+    end
+    return originalEffectiveColors(palette, ...)
+  end
+  PaletteFX.gen1BetterMenusRawZoneHookInstalled = true
+end
+
+local function rawMenuPaletteCopy(source)
+  local clone = {}
+  for i, color in ipairs(source or {}) do
+    clone[i] = type(color) == "table"
+      and { color[1], color[2], color[3] } or color
+  end
+  PaletteFX.gen1BetterMenusRawZonePalettes[clone] = true
+  return clone
+end
+
+local function bypassOgTransformForZones(zones)
+  for _, zone in ipairs(zones or {}) do
+    local source = zone and zone.colors
+    if type(source) == "table" then
+      zone.colors = rawMenuPaletteCopy(source)
+    end
+  end
+  return zones
+end
+
+local function lockedOgMenuPaletteLabel(game)
+  game = game or activeGame
+  local id = game and game.save and game.save.options
+    and game.save.options.colors
+  return (OG_MENU_PALETTE_LABELS[id] or tostring(id or "OG"))
+    .. " (LOCKED)"
+end
+
+-- Rendering contract:
+-- 1. Menu geometry is identical in NORMAL and INVERSE.
+-- 2. colors() always returns canonical palette order.
+-- 3. INVERSE is applied once by effectiveMenuPalette().
+-- 4. Semantic HP/XP colors are excluded from menu-palette remapping unless
+--    an OG engine palette is active, in which case that engine pass owns them.
+-- 5. Renderers must never reverse or un-reverse palettes themselves.
+
+local function colors(game)
+  game = game or activeGame
+  if useStockOgMenuPalette(game) then
+    local id = game.save.options.colors
+    local stock = PALETTES[id]
+    if stock then return stock end
+  end
   local id = activeMod and activeMod.options:get("palette") or "soulsilver"
   local palette = PALETTES[id] or PALETTES.soulsilver
-  if activeMod and activeMod.options:get("inverse") then
-    return { palette[4], palette[3], palette[2], palette[1] }
+  if overrideOgMenuPalette(game) then
+    return rawMenuPaletteCopy(palette)
   end
   return palette
 end
 
+local function effectiveMenuPalette(game)
+  local palette = colors(game)
+  if not (activeMod and activeMod.options:get("inverse")) then
+    return palette
+  end
+  local resolved = PaletteFX.effectiveColors(palette) or palette
+  return rawMenuPaletteCopy({
+    resolved[4], resolved[3], resolved[2], resolved[1],
+  })
+end
+
 local function wholeWide()
-  return { PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1) }
+  return { PaletteFX.zone(effectiveMenuPalette(), 0, 0, UI_TW - 1, UI_TH - 1) }
 end
 
 local function makeWideState(class)
@@ -380,19 +514,19 @@ local function installOverworldScaleStability()
 	local sid = top and type(top.screenId) == "string"
   and top.screenId:lower() or ""
 
-local dynamicOptionRows =
-  top
-  and type(top.rows) == "function"
-  and type(top.index) == "number"
-  and type(top.scroll) == "number"
+	local dynamicOptionRows =
+	  top
+	  and type(top.rows) == "function"
+	  and type(top.index) == "number"
+	  and type(top.scroll) == "number"
 
-if isOptionRowsScreen(top)
-    or (dynamicOptionRows
-      and not top.gen1BetterMenusBagFavorites
-      and not top.gen1BetterMenusBagSubmenu) then
-  top.uiSize = function() return UI_W, UI_H end
-  top.isWideBattleLayout = function() return false end
-end
+	if isOptionRowsScreen(top)
+		or (dynamicOptionRows
+		  and not top.gen1BetterMenusBagFavorites
+		  and not top.gen1BetterMenusBagSubmenu) then
+	  top.uiSize = function() return UI_W, UI_H end
+	  top.isWideBattleLayout = function() return false end
+	end
 
     local worldBelow, battlePresent = false, false
     for i = 1, #states do
@@ -507,7 +641,7 @@ local function installReportLayout()
   QuarantineReport.isOpaque = false
 
   QuarantineReport.sgbPalettes = function()
-    return { PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1) }
+    return { PaletteFX.zone(effectiveMenuPalette(), 0, 0, UI_TW - 1, UI_TH - 1) }
   end
 
   local originalReportDraw = QuarantineReport.draw
@@ -714,7 +848,7 @@ ListMenu.new = function(game, ...)
 
     self.sgbPalettes = function()
       return {
-        PaletteFX.zone(colors(), 0, 0, 37, 20)
+        PaletteFX.zone(effectiveMenuPalette(), 0, 0, 37, 20)
       }
     end
 
@@ -1245,7 +1379,7 @@ local function installMenuLayout()
     if top and top.titleUiBox
        and (top.enhancedTitleMenu or top.enhancedTitleInfo) then
       return {
-        PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1),
+        PaletteFX.zone(effectiveMenuPalette(), 0, 0, UI_TW - 1, UI_TH - 1),
       }
     end
     local result = originalTitlePalettes(self, game)
@@ -1548,7 +1682,7 @@ local function installDialogueLayout()
       self.gen1BetterMenusSolidNickname = true
       self.holdsUIAnchors = false
       self.sgbPalettes = function(_, currentGame)
-        local base = colors()
+        local base = effectiveMenuPalette()
         local palette = { base[1], base[2], base[3], base[4] }
         local r, g, b = PaletteFX.paperShade(currentGame.data)
         palette[1] = {
@@ -1623,14 +1757,14 @@ local function installSupportingScreens()
 	  ),
 
 	  -- Active menu palette on the Pokédex frame only.
-	  PaletteFX.zone(colors(), ox, 0, ox + 9, 0),         -- top-left
-	  PaletteFX.zone(colors(), ox + 10, 0, ox + 19, 0),   -- top-right
-	  PaletteFX.zone(colors(), ox, 17, ox + 9, 17),       -- bottom-left
-	  PaletteFX.zone(colors(), ox + 10, 17, ox + 19, 17), -- bottom-right
-	  PaletteFX.zone(colors(), ox, 0, ox, 17),            -- left
-	  PaletteFX.zone(colors(), ox + 19, 0, ox + 19, 17),  -- right
-	  PaletteFX.zone(colors(), ox, 9, ox + 9, 9),         -- divider-left
-	  PaletteFX.zone(colors(), ox + 10, 9, ox + 19, 9),   -- divider-right
+	  PaletteFX.zone(effectiveMenuPalette(), ox, 0, ox + 9, 0),         -- top-left
+	  PaletteFX.zone(effectiveMenuPalette(), ox + 10, 0, ox + 19, 0),   -- top-right
+	  PaletteFX.zone(effectiveMenuPalette(), ox, 17, ox + 9, 17),       -- bottom-left
+	  PaletteFX.zone(effectiveMenuPalette(), ox + 10, 17, ox + 19, 17), -- bottom-right
+	  PaletteFX.zone(effectiveMenuPalette(), ox, 0, ox, 17),            -- left
+	  PaletteFX.zone(effectiveMenuPalette(), ox + 19, 0, ox + 19, 17),  -- right
+	  PaletteFX.zone(effectiveMenuPalette(), ox, 9, ox + 9, 9),         -- divider-left
+	  PaletteFX.zone(effectiveMenuPalette(), ox + 10, 9, ox + 19, 9),   -- divider-right
 	}
 	end
 
@@ -1695,7 +1829,7 @@ local function installSupportingScreens()
       self.uiSize = function() return UI_W, UI_H end
       self.isWideBattleLayout = function() return true end
       self.sgbPalettes = function(_, currentGame)
-        local base = colors()
+        local base = effectiveMenuPalette()
         local palette = { base[1], base[2], base[3], base[4] }
         local r, g, b = PaletteFX.paperShade(currentGame.data)
         palette[1] = {
@@ -1935,46 +2069,10 @@ local function installSupportingScreens()
   local originalSummaryDraw = SummaryMenu.draw
 
 SummaryMenu.draw = function(self)
+  local sprite = self.sprite
+  self.sprite = nil
   originalSummaryDraw(self)
-
-  if self.sprite then
-    local pw, ph = self.sprite:getDimensions()
-    local py = math.max(0, 56 - ph)
-
-	local palette = PaletteFX.effectiveColors(colors())
-	local paper = palette and palette[1]
-
-	if paper then
-	  love.graphics.setColor(
-		paper[1] / 255,
-		paper[2] / 255,
-		paper[3] / 255,
-		1
-	  )
-
-	  love.graphics.rectangle("fill", 8, py, pw, ph)
-
-	  love.graphics.setColor(1, 1, 1, 1)
-
-	  local monPal = self.mon
-	    and PaletteFX.monPal(self.game.data, self.mon.species)
-	  local shader = not self.spriteTrueColor
-	    and monPal and PaletteFX.shader()
-
-	  if shader then
-	    PaletteFX.sendColors(shader, monPal)
-	    love.graphics.setShader(shader)
-	  end
-
-	  love.graphics.draw(self.sprite, 8 + pw, py, 0, -1, 1)
-
-	  if shader then
-	    love.graphics.setShader()
-	  end
-
-	  PaletteFX.markTrueColor(8, py, pw, ph)
-	end
-  end
+  self.sprite = sprite
 end
   
   makeWideState(SummaryMenu)
@@ -2255,6 +2353,7 @@ return function(mod, menuColors)
 
   mod.events:on("game.ready", function(event)
     qolCompatGame = event and event.game
+    activeGame = qolCompatGame
     disableConflictingQolBattleFeatures(qolCompatGame)
   end)
   mod.events:on("mod.options_changed", function(event)
@@ -2264,6 +2363,43 @@ return function(mod, menuColors)
       disableConflictingQolBattleFeatures(qolCompatGame)
     end
   end)
+
+  -- The Mod Manager builds its rows from the static option schema. Decorate
+  -- only BetterMenus' palette row so the saved choice remains untouched while
+  -- an OG game palette temporarily owns the UI.
+  ManagerState.gen1BetterMenusOgPaletteControl = {
+    locked = useStockOgMenuPalette,
+    label = lockedOgMenuPaletteLabel,
+  }
+  if not ManagerState.gen1BetterMenusOgPaletteRowsInstalled then
+    local originalBuildOptionRows = ManagerState.buildOptionRows
+    ManagerState.buildOptionRows = function(self, entry, schema)
+      local rows = originalBuildOptionRows(self, entry, schema)
+      if entry and entry.id == "gen1-better-menus" then
+        local control = ManagerState.gen1BetterMenusOgPaletteControl
+        for _, row in ipairs(rows or {}) do
+          if row.id == "palette" then
+            local normalValue, normalStep = row.value, row.step
+            row.value = function(game)
+              game = game or self.game
+              if control and control.locked(game) then
+                return control.label(game)
+              end
+              return normalValue and normalValue(game) or "----"
+            end
+            row.step = function(game, dir)
+              game = game or self.game
+              if control and control.locked(game) then return true end
+              return normalStep and normalStep(game, dir) or false
+            end
+            break
+          end
+        end
+      end
+      return rows
+    end
+    ManagerState.gen1BetterMenusOgPaletteRowsInstalled = true
+  end
   
     local genderMod = mod.find("gender_mod")
   local genderExports = genderMod and genderMod.exports or nil
@@ -2293,7 +2429,7 @@ return function(mod, menuColors)
   end
 
   local okScreen, screen = pcall(factory, mod, genderExports, compatibility,
-    colors)
+    effectiveMenuPalette, useStockOgMenuPalette)
   if not okScreen or type(screen) ~= "table"
       or type(screen.new) ~= "function" then
     mod.log:error("PC screen factory failed: %s", tostring(screen))
@@ -2355,7 +2491,8 @@ return function(mod, menuColors)
         or nil,
     }
     local okBagScreen, modernBagScreen = pcall(
-      makeBagScreen, mod, bagCompatibility, colors)
+      makeBagScreen, mod, bagCompatibility, effectiveMenuPalette, useStockOgMenuPalette,
+      usesOgEnginePalette)
     local okBagInventory, modernBagInventory = false, nil
     if okBagScreen and type(modernBagScreen) == "table"
         and type(modernBagScreen.new) == "function" then
@@ -2412,7 +2549,8 @@ return function(mod, menuColors)
 		return
 	  end
 
-	  local installedHud, hudInstallErr = pcall(installHud, mod, colors)
+	  local installedHud, hudInstallErr = pcall(installHud, mod,
+		effectiveMenuPalette, useStockOgMenuPalette)
 	  if not installedHud then
 		mod.log:error("battle information HUD failed: %s",
 		  tostring(hudInstallErr))
@@ -2449,46 +2587,51 @@ return function(mod, menuColors)
       choices = {
 	    { "GAME BOY", "gameboy" },
 		{ "BLACK AND WHITE", "blackwhite" },
+		{ "OG RED", "ogred" },
+		{ "ADVANCED", "redpp" },
+		{ "SGB", "gbc" },
         { "SOULSILVER", "soulsilver" },
         { "HEARTGOLD", "heartgold" },
         { "FIRERED", "firered" },
         { "LEAFGREEN", "leafgreen" },
         { "CRYSTAL", "crystal" },
         { "EMERALD", "emerald" },
-		{ "1", "amiga_wb" },
-		{ "2", "amiga_dp" },
-		{ "3", "c64" },
-		{ "4", "spectrum" },
-		{ "5", "cga" },
-		{ "6", "apple2" },
-		{ "7", "pocket" },
-		{ "8", "gblight" },
-		{ "9", "virtualboy" },
-		{ "10", "amber" },
-		{ "11", "phosphor" },
-		{ "12", "plasma" },
-		{ "13", "rainbow" },
-		{ "14", "acid" },
-		{ "15", "fuchsia" },
-		{ "16", "sunset" },
-		{ "17", "ocean" },
-		{ "18", "forest" },
-		{ "19", "lava" },
-		{ "20", "ice" },
-		{ "21", "candy" },
-		{ "22", "vapor" },
-		{ "23", "neon" },
-		{ "24", "toxic" },
-		{ "25", "sepia" },
-		{ "26", "noir" },
-		{ "27", "cherry" },
-		{ "28", "midnight" },
-		{ "29", "gold" },
-		{ "30", "mint" },
-		{ "31", "grape" },
+		{ "AMIGA WB", "amiga_wb" },
+		{ "AMIGA DP", "amiga_dp" },
+		{ "C64", "c64" },
+		{ "SPECTRUM", "spectrum" },
+		{ "CGA", "cga" },
+		{ "APPLE2", "apple2" },
+		{ "POCKET", "pocket" },
+		{ "GB LIGHT", "gblight" },
+		{ "VIRTUAL BOY", "virtualboy" },
+		{ "AMBER", "amber" },
+		{ "PHOSPHOR", "phosphor" },
+		{ "PLASMA", "plasma" },
+		{ "RAINBOW", "rainbow" },
+		{ "ACID", "acid" },
+		{ "FUSCHIA", "fuchsia" },
+		{ "SUNSET", "sunset" },
+		{ "OCEAN", "ocean" },
+		{ "FOREST", "forest" },
+		{ "LAVA", "lava" },
+		{ "ICE", "ice" },
+		{ "CANDY", "candy" },
+		{ "VAPOR", "vapor" },
+		{ "NEON", "neon" },
+		{ "TOXIC", "toxic" },
+		{ "SEPIA", "sepia" },
+		{ "NOIR", "noir" },
+		{ "CHERRY", "cherry" },
+		{ "MIDNIGHT", "midnight" },
+		{ "GOLD", "gold" },
+		{ "MINT", "mint" },
+		{ "GRAPE", "grape" },
       } },
     { key = "inverse", label = "INVERSE", type = "toggle",
       default = false },
+	{ key = "override_og_menu_palette", label = "OVERRIDE OG MENU PALETTE", type = "toggle",
+	  default = false },
     { key = "modern_pc_ui", label = "MODERN PC UI", type = "toggle",
       default = false },
     { key = "modern_bag_ui", label = "MODERN BAG UI", type = "toggle",
@@ -2569,15 +2712,13 @@ return function(mod, menuColors)
 local paletteChoices = {
 	  "gameboy",
 	  "blackwhite",
+	  "ogred",
 	  "soulsilver",
 	  "heartgold",
 	  "firered",
 	  "leafgreen",
 	  "crystal",
 	  "emerald",
-	  "ogred",
-	  "ogredobj",
-	  "ogblue",
 	  "amiga_wb",
 	  "amiga_dp",
 	  "c64",
@@ -2611,6 +2752,53 @@ local paletteChoices = {
 	  "grape",
 	}
 
+	local paletteNames = {
+	  gameboy = "GAME BOY",
+	  blackwhite = "BLACK AND WHITE",
+	  classic = "GAME BOY",
+	  og = "OG",
+	  ogred = "OG RED",
+	  redpp = "ADVANCED",
+	  gbc = "SGB",
+	  soulsilver = "SOULSILVER",
+	  heartgold = "HEARTGOLD",
+	  firered = "FIRERED",
+	  leafgreen = "LEAFGREEN",
+	  crystal = "CRYSTAL",
+	  emerald = "EMERALD",
+	  amiga_wb = "AMIGA WB",
+	  amiga_dp = "AMIGA DP",
+	  c64 = "C64",
+	  spectrum = "SPECTRUM",
+	  cga = "CGA",
+	  apple2 = "APPLE2",
+	  pocket = "POCKET",
+	  gblight = "GB LIGHT",
+	  virtualboy = "VIRTUAL BOY",
+	  amber = "AMBER",
+	  phosphor = "PHOSPHOR",
+	  plasma = "PLASMA",
+	  rainbow = "RAINBOW",
+	  acid = "ACID",
+	  fuchsia = "FUSCHIA",
+	  sunset = "SUNSET",
+	  ocean = "OCEAN",
+	  forest = "FOREST",
+	  lava = "LAVA",
+	  ice = "ICE",
+	  candy = "CANDY",
+	  vapor = "VAPOR",
+	  neon = "NEON",
+	  toxic = "TOXIC",
+	  sepia = "SEPIA",
+	  noir = "NOIR",
+	  cherry = "CHERRY",
+	  midnight = "MIDNIGHT",
+	  gold = "GOLD",
+	  mint = "MINT",
+	  grape = "GRAPE",
+	}
+
 	local function setOption(key, value)
 	  local manager = ManagerState.new(game)
 	  manager:setOption("gen1-better-menus", key, value)
@@ -2626,18 +2814,19 @@ local paletteChoices = {
 	local rows = {
 	  {
 		label = "MENU PALETTE",
-		value = function()
-		  local current = activeMod.options:get("palette")
-
-		  for i, id in ipairs(paletteChoices) do
-			if id == current then
-			  return tostring(i)
-			end
+		value = function(g)
+		  if useStockOgMenuPalette(g) then
+			return lockedOgMenuPaletteLabel(g)
 		  end
 
-		  return "1"
+		  local current = activeMod.options:get("palette")
+		  return paletteNames[current] or current
 		end,
-		step = function(_, dir)
+		step = function(g, dir)
+		  if useStockOgMenuPalette(g) then
+			return true
+		  end
+
 		  local current = activeMod.options:get("palette")
 		  local index = 1
 
@@ -2670,6 +2859,20 @@ local paletteChoices = {
 		  setOption("inverse", not activeMod.options:get("inverse"))
 		  return true
 		end,
+	  },
+	  
+	  {
+	  label = "OVERRIDE OG MENU PALETTE",
+	  value = function()
+		return activeMod.options:get("override_og_menu_palette") and "ON" or "OFF"
+	  end,
+	  step = function()
+		setOption(
+		  "override_og_menu_palette",
+		  not activeMod.options:get("override_og_menu_palette")
+		)
+		return true
+	  end,
 	  },
 
 	  {
@@ -2835,16 +3038,16 @@ local paletteChoices = {
   mod.hooks:wrap("render.letterbox", function(next, ctx)
     next(ctx)
     local top = frameGame and frameGame.stack and frameGame.stack:top()
-    if top and top.__modernBagWhiteBackdrop
+    if top and top.__modernBagFrameBackdrop
        and ctx and ctx.ww and ctx.wh then
       local r, green, b, a = love.graphics.getColor()
-      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.setColor(PaletteFX.paperShade(frameGame.data))
       love.graphics.rectangle("fill", 0, 0, ctx.ww, ctx.wh)
       love.graphics.setColor(r, green, b, a)
       return
     end
     if top and top.modernBagUI and ctx and ctx.ww and ctx.wh then
-      local palette = PaletteFX.effectiveColors(colors())
+      local palette = PaletteFX.effectiveColors(effectiveMenuPalette())
       local footer = palette and palette[3] or { 85, 85, 85 }
       local r, green, b, a = love.graphics.getColor()
       love.graphics.setColor(
@@ -2862,7 +3065,7 @@ local paletteChoices = {
       end
     end
     if introNaming and ctx and ctx.ww and ctx.wh then
-      local palette = PaletteFX.effectiveColors(colors())
+      local palette = PaletteFX.effectiveColors(effectiveMenuPalette())
       local paper = palette and palette[1] or { 255, 255, 255 }
       local r, green, b, a = love.graphics.getColor()
       love.graphics.setColor(
@@ -2879,7 +3082,7 @@ local paletteChoices = {
 local paper
 
 if top and top ~= title then
-  local menuColors = PaletteFX.effectiveColors(colors())
+  local menuColors = PaletteFX.effectiveColors(effectiveMenuPalette())
   paper = menuColors and menuColors[1] or { 255, 255, 255 }
 else
   local sourceColors = YELLOW_TITLE_PIKACHU
@@ -2903,6 +3106,49 @@ end
     local top = game and game.stack and game.stack:top()
     local options = game and game.save and game.save.options
 
+    -- Summary sprites are transparent images. Draw them after the menu's
+    -- palette pass so true-color art is never remapped and no rectangular
+    -- true-color zone can expose an unpaletted seam around the sprite.
+    if top and getmetatable(top) == SummaryMenu and top.sprite
+        and viewport and viewport.gameX and viewport.gameY
+        and viewport.gameWidth and viewport.gameHeight then
+      local pw, ph = top.sprite:getDimensions()
+      local py = math.max(0, 56 - ph)
+      local scaleX = viewport.gameWidth / UI_W
+      local scaleY = viewport.gameHeight / UI_H
+      local r, green, b, a = love.graphics.getColor()
+      local previousShader = love.graphics.getShader()
+      local scissorX, scissorY, scissorW, scissorH = love.graphics.getScissor()
+      local monPal = top.mon
+        and PaletteFX.monPal(game.data, top.mon.species)
+      local shader = not top.spriteTrueColor
+        and monPal and PaletteFX.shader()
+
+      love.graphics.push()
+      love.graphics.setScissor(
+        viewport.gameX, viewport.gameY,
+        viewport.gameWidth, viewport.gameHeight)
+      love.graphics.translate(viewport.gameX, viewport.gameY)
+      love.graphics.scale(scaleX, scaleY)
+      love.graphics.setColor(1, 1, 1, 1)
+      if shader then
+        PaletteFX.sendColors(shader, monPal)
+        love.graphics.setShader(shader)
+      else
+        love.graphics.setShader()
+      end
+      love.graphics.draw(top.sprite, 8 + pw, py, 0, -1, 1)
+      love.graphics.pop()
+
+      love.graphics.setShader(previousShader)
+      if scissorX then
+        love.graphics.setScissor(scissorX, scissorY, scissorW, scissorH)
+      else
+        love.graphics.setScissor()
+      end
+      love.graphics.setColor(r, green, b, a)
+    end
+
     -- The responsive Bag reaches the logical canvas edge, but the final
     -- presentation pass can leave one framebuffer row from the overworld.
     -- Cover that post-composite seam with the active menu footer color.
@@ -2917,7 +3163,7 @@ end
       end
     end
     if modernBagVisible and viewport and viewport.width and viewport.height then
-      local palette = PaletteFX.effectiveColors(colors())
+      local palette = PaletteFX.effectiveColors(effectiveMenuPalette())
       local footer = palette and palette[3] or { 85, 85, 85 }
       local pixelH = 1 / (viewport.dpiY or 1)
       local r, green, b, a = love.graphics.getColor()
@@ -2948,6 +3194,7 @@ end
   end)
   mod.hooks:wrap("render.zones", function(next, game, zones)
     frameGame = game
+    activeGame = game
     local out = next(game, zones) or {}
     local top = game and game.stack and game.stack:top()
     local mt = top and getmetatable(top)
@@ -2960,21 +3207,44 @@ end
     local states = game and game.stack and game.stack.states or {}
     local stack = game and game.stack
     local first = stack and stack.visibleBase and stack:visibleBase() or 1
+    local overrideModernPalette = false
+    if overrideOgMenuPalette(game) then
+      for i = first, #states do
+        local state = states[i]
+        if state and (state.modernBagUI or state.modernPCUI) then
+          overrideModernPalette = true
+          break
+        end
+      end
+    end
+    local function finished(result)
+      if overrideModernPalette then
+        return bypassOgTransformForZones(result)
+      end
+      return result
+    end
     for i = first, #states do
       if states[i] and states[i].modernBagUI then
-        return out
+        return finished(out)
       end
     end
 
     if mt == BattleState and top.wideLayout and top:wideLayout() then
-      -- Wide battle draws true-colour arena and Pokémon, so recolour only
-      -- the three opaque UI panels rather than the completed battle canvas.
-      out[#out + 1] = battleUIZone(colors(), 0, 0, 15, 3)
-      out[#out + 1] = battleUIZone(colors(), 23, 7, 37, 12)
-      out[#out + 1] = battleUIZone(colors(), 0, 13, 37, 17)
-      -- The HP bars retain their semantic green/yellow/red colors.
-      out[#out + 1] = battleUIZone(false, 1, 2, 14, 2)
-      out[#out + 1] = battleUIZone(false, 24, 9, 36, 9)
+      -- A locked OG engine palette already owns the complete wide surface.
+      -- Adding panel zones on top transforms the arena beneath transparent
+      -- HUD interiors a second time, leaving large opaque rectangles. Keep
+      -- the panel zones only for the normal BetterMenus palette path and for
+      -- the explicit BetterMenus inverse treatment.
+      local ogInverse = useStockOgMenuPalette(game) and activeMod
+        and activeMod.options:get("inverse") == true
+      if not useStockOgMenuPalette(game) or ogInverse then
+        out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 0, 15, 3)
+        out[#out + 1] = battleUIZone(effectiveMenuPalette(), 23, 7, 37, 12)
+        out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 13, 37, 17)
+      end
+      -- hud.lua adds pixel-tight true-color zones for the two-row semantic
+      -- HP/EXP fills. Exempting these complete eight-pixel rows would also
+      -- preserve raw white source pixels around the labels and tracks.
     else
       local title
       for i = 1, #states do
@@ -2990,35 +3260,35 @@ end
         local state = states[i]
         local stateMt = state and getmetatable(state)
         if stateMt == Menu then
-          out[#out + 1] = PaletteFX.zone(colors(), state.tx, state.ty,
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
           if state.gen1BetterMenusPCChrome then
             out[#out + 1] = PaletteFX.zone(
-              colors(), 0, 12, UI_TW - 1, UI_TH - 1)
+              effectiveMenuPalette(), 0, 12, UI_TW - 1, UI_TH - 1)
           end
         elseif state and state.isTextBox then
-          out[#out + 1] = PaletteFX.zone(colors(), state.boxTx, state.boxTy,
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), state.boxTx, state.boxTy,
             state.boxTx + state.boxTw - 1,
             state.boxTy + state.boxTh - 1)
         elseif stateMt == ChoiceBox then
-          out[#out + 1] = PaletteFX.zone(colors(), state.tx, state.ty,
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
         elseif stateMt == TrainerCard then
-          out[#out + 1] = PaletteFX.zone(colors(), 0, 0, UI_TW - 1, UI_TH - 1)
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), 0, 0, UI_TW - 1, UI_TH - 1)
         elseif stateMt == QuarantineReport then
-          out[#out + 1] = PaletteFX.zone(colors(), 0, 0, 19, 17)
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), 0, 0, 19, 17)
         elseif state and state.titleUiBox then
           local box = state.titleUiBox
-          out[#out + 1] = PaletteFX.zone(colors(),
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(),
             box[1], box[2], box[3], box[4])
         end
       end
 
       local locationVisible = updateLocationBanner(game)
       if locationVisible and states[first] == game.overworld then
-        out[#out + 1] = PaletteFX.zone(colors(), 0, 14, 19, 17)
+        out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), 0, 14, 19, 17)
       end
     end
-    return out
+    return finished(out)
   end)
 end

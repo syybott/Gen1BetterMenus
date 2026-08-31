@@ -5,7 +5,8 @@
 -- tutorial input and several screens opened after item use. This module wraps
 -- that controller instead of duplicating it. Only the visible list, drawing,
 -- left/right pocket navigation and filtered-list reordering live here.
-return function(mod, compatibility, menuColors)
+return function(mod, compatibility, menuColors, useStockOgMenuPalette,
+  usesOgEnginePalette)
   compatibility = compatibility or {}
   local BagMenu = require("src.ui.BagMenu")
   local Bag = require("src.inventory.Bag")
@@ -324,6 +325,8 @@ return function(mod, compatibility, menuColors)
   end
 
   local function markPixelRoundTrueColor(x, y, width, height)
+    if type(usesOgEnginePalette) == "function"
+        and usesOgEnginePalette(game) then return end
     x, y = math.floor(x), math.floor(y)
     width, height = math.floor(width), math.floor(height)
     PaletteFX.markTrueColor(x + 2, y, width - 4, height)
@@ -812,7 +815,10 @@ return function(mod, compatibility, menuColors)
     local function rgb(red, green, blue, rx, ry, rw, rh)
       love.graphics.setColor(red / 255, green / 255, blue / 255, 1)
       love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
-      PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      if not (type(usesOgEnginePalette) == "function"
+          and usesOgEnginePalette()) then
+        PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      end
     end
     rgb(18, 18, 18, 6, 1, 4, 1)
     rgb(18, 18, 18, 4, 2, 8, 1)
@@ -849,7 +855,10 @@ return function(mod, compatibility, menuColors)
       love.graphics.setColor(color[1] / 255, color[2] / 255,
         color[3] / 255, 1)
       love.graphics.rectangle("fill", x + rx, y + ry, rw, rh)
-      PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      if not (type(usesOgEnginePalette) == "function"
+          and usesOgEnginePalette()) then
+        PaletteFX.markTrueColor(x + rx, y + ry, rw, rh)
+      end
     end
     local black = { 18, 18, 18 }
     local white = { 250, 250, 250 }
@@ -1041,6 +1050,11 @@ return function(mod, compatibility, menuColors)
     local palette = HEADER_ICON_COLORS[pocket.key]
       or HEADER_ICON_COLORS.key
     local function shade(index)
+      if type(usesOgEnginePalette) == "function"
+          and usesOgEnginePalette() then
+        gray(({ WHITE, LIGHT, DARK, BLACK })[index] or BLACK)
+        return
+      end
       local color = palette and palette[index]
       if color then
         love.graphics.setColor(color[1] / 255, color[2] / 255,
@@ -1066,25 +1080,25 @@ return function(mod, compatibility, menuColors)
       rect(1, 4, 5, 8, 3)
       rect(3, 4, 10, 8, 2)
     elseif key == "items" then
-      -- True 45-degree road-sign diamond with a smaller orange inset.
-      rgb(242, 112, 16, 7, 1, 2, 1)
-      rgb(242, 112, 16, 6, 2, 4, 1)
-      rgb(242, 112, 16, 5, 3, 6, 1)
-      rgb(242, 112, 16, 4, 4, 8, 1)
-      rgb(242, 112, 16, 3, 5, 10, 1)
-      rgb(242, 112, 16, 2, 6, 12, 1)
-      rgb(242, 112, 16, 1, 7, 14, 1)
-      rgb(242, 112, 16, 2, 8, 12, 1)
-      rgb(242, 112, 16, 3, 9, 10, 1)
-      rgb(242, 112, 16, 4, 10, 8, 1)
-      rgb(242, 112, 16, 5, 11, 6, 1)
-      rgb(242, 112, 16, 6, 12, 4, 1)
-      rgb(242, 112, 16, 7, 13, 2, 1)
-      rgb(255, 190, 64, 7, 4, 2, 1)
-      rgb(255, 190, 64, 6, 5, 4, 1)
-      rgb(255, 190, 64, 5, 6, 6, 3)
-      rgb(255, 190, 64, 6, 9, 4, 1)
-      rgb(255, 190, 64, 7, 10, 2, 1)
+      rect(4, 7, 1, 2, 1)
+      rect(4, 6, 2, 4, 1)
+      rect(4, 5, 3, 6, 1)
+      rect(4, 4, 4, 8, 1)
+      rect(4, 3, 5, 10, 1)
+      rect(4, 2, 6, 12, 1)
+      rect(4, 1, 7, 14, 1)
+      rect(4, 2, 8, 12, 1)
+      rect(4, 3, 9, 10, 1)
+      rect(4, 4, 10, 8, 1)
+      rect(4, 5, 11, 6, 1)
+      rect(4, 6, 12, 4, 1)
+      rect(4, 7, 13, 2, 1)
+      rect(3, 7, 4, 2, 1)
+      rect(3, 6, 5, 4, 1)
+      rect(3, 5, 6, 6, 3)
+      rect(3, 6, 9, 4, 1)
+      rect(3, 7, 10, 2, 1)
+      rect(2, 7, 7, 2, 3)
     elseif key == "medicine" then
       rect(3, 5, 1, 6, 2)
       rect(2, 4, 3, 8, 12)
@@ -1120,9 +1134,13 @@ return function(mod, compatibility, menuColors)
       rgb(220, 252, 255, 3, 6, 3, 3)
       rgb(6, 28, 34, 4, 7, 2, 1)
     end
-    if key ~= "balls" then
-      PaletteFX.markTrueColor(x, y, 16, 16)
-    end
+	if key ~= "balls"
+		and not (
+		  type(usesOgEnginePalette) == "function"
+		  and usesOgEnginePalette()
+		) then
+	  PaletteFX.markTrueColor(x, y, 16, 16)
+	end
   end
 
   local function drawBackdrop(layout)
@@ -1946,6 +1964,14 @@ return function(mod, compatibility, menuColors)
     local stable = PaletteFX.pal(data, "BLUEMON") or base
     if not base or not stable then return nil end
 
+    if type(useStockOgMenuPalette) == "function"
+        and useStockOgMenuPalette() then
+      return {{
+        colors = base, x = 0, y = 0,
+        w = layout.width, h = layout.canvasHeight or layout.height,
+      }}
+    end
+
     local zones = {{
       colors = base, x = 0, y = 0,
       w = layout.width, h = layout.canvasHeight or layout.height,
@@ -2106,10 +2132,10 @@ return function(mod, compatibility, menuColors)
       end
 
       -- Town Map remains an opaque, centered native-width screen. Tag it so
-      -- the letterbox layer can replace its black surround with clean white.
+      -- the final letterbox layer supplies a solid frame outside its viewport.
       local TownMap = require("src.ui.TownMap")
       if owner and state and getmetatable(state) == TownMap then
-        state.__modernBagWhiteBackdrop = true
+        state.__modernBagFrameBackdrop = true
         return originalPush(self, state, ...)
       end
 

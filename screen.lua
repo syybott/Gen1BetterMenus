@@ -1,7 +1,8 @@
 -- A single party-and-box workspace inspired by the storage screens in newer
 -- Pokémon games. The engine's compact list-shaped Gen 1 saves stay intact;
 -- this screen is only a controller and presentation layer over those lists.
-return function(mod, genderExports, compatibility, menuColors)
+return function(mod, genderExports, compatibility, menuColors,
+    useStockOgMenuPalette)
   compatibility = compatibility or {}
   local Assets = require("src.render.Assets")
   local Boxes = require("src.pokemon.Boxes")
@@ -1274,8 +1275,11 @@ end
       local x, y, width, height = actionGeometry(self, layout)
       modalCutout = { x = x, y = y, w = width + 2, h = height + 2 }
     end
-    for _, rect in ipairs(trueColorRegions) do
-      markTrueColorOutside(rect, modalCutout)
+    if not (type(useStockOgMenuPalette) == "function"
+        and useStockOgMenuPalette(game)) then
+      for _, rect in ipairs(trueColorRegions) do
+        markTrueColorOutside(rect, modalCutout)
+      end
     end
     gray(WHITE)
   end
@@ -1289,6 +1293,12 @@ end
     local base = selectedMenuPalette or PaletteFX.pal(data, "BLUEMON")
       or PaletteFX.pal(data, "MEWMON")
     if not base then return nil end
+    if type(useStockOgMenuPalette) == "function"
+        and useStockOgMenuPalette(game) then
+      return {{
+        colors = base, x = 0, y = 0, w = layout.width, h = SCREEN_H,
+      }}
+    end
     local zones = {
       { colors = base, x = 0, y = 0, w = layout.width, h = SCREEN_H },
     }
