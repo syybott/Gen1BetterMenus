@@ -1661,11 +1661,45 @@ end
 local function drawLocationBanner(world)
   local state = locationStates[world]
   if not state or love.timer.getTime() >= state.expiresAt then return end
-  Font.drawBox(0, 14, 20, 4)
-  love.graphics.setColor(0, 0, 0, 1)
   local width = Font.width(state.name)
-  Font.draw(state.name, math.max(8, math.floor((160 - width) / 2)), 128)
+  local tw = math.min(20, math.max(3, math.ceil(width / 8) + 3))
+  local tx = math.floor((20 - tw) / 2)
+  Font.drawBox(tx, 15, tw, 3)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(state.name, math.floor((160 - width) / 2), 128)
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function locationBannerSuppressed(game)
+  local states = game and game.stack and game.stack.states or {}
+  for i = 1, #states do
+    if states[i] and states[i].gen1BetterMenusSuppressLocationBanner then
+      return true
+    end
+  end
+  return false
+end
+
+local function claimLocationOverlay(game, world)
+  local overlay = world and rawget(world, LOCATION_OVERLAY_KEY)
+  if not overlay then return end
+  local record = locationOverlays[overlay]
+  if not record then
+    record = { original = overlay.draw }
+    record.wrapper = function()
+      if locationBannerSuppressed(game) then return end
+      local state = locationStates[world]
+      if state and love.timer.getTime() < state.expiresAt then
+        drawLocationBanner(world)
+      elseif record.original then
+        record.original(world)
+      end
+    end
+    locationOverlays[overlay] = record
+  elseif overlay.draw ~= record.wrapper then
+    record.original = overlay.draw
+  end
+  overlay.draw = record.wrapper
 end
 
 local function installLocationBanners(mod)
@@ -1678,35 +1712,14 @@ local function installLocationBanners(mod)
       name = locationBannerName(game, event),
       expiresAt = love.timer.getTime() + duration,
     }
-  end)
+    claimLocationOverlay(game, world)
+  end, -1000)
 end
 
 local function updateLocationBanner(game)
-  local function suppressed()
-    local states = game and game.stack and game.stack.states or {}
-    for i = 1, #states do
-      if states[i] and states[i].gen1BetterMenusSuppressLocationBanner then
-        return true
-      end
-    end
-    return false
-  end
-
   local world = game and game.overworld
-  local overlay = world and rawget(world, LOCATION_OVERLAY_KEY)
-  if overlay and not locationOverlays[overlay] then
-    locationOverlays[overlay] = overlay.draw
-    overlay.draw = function()
-      if suppressed() then return end
-      local state = locationStates[world]
-      if state and love.timer.getTime() < state.expiresAt then
-        drawLocationBanner(world)
-      elseif locationOverlays[overlay] then
-        locationOverlays[overlay](world)
-      end
-    end
-  end
-  if suppressed() then return false end
+  claimLocationOverlay(game, world)
+  if locationBannerSuppressed(game) then return false end
   local state = world and locationStates[world]
   return state and love.timer.getTime() < state.expiresAt
 end
