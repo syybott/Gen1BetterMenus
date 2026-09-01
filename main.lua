@@ -298,6 +298,19 @@ local YELLOW_TITLE_PIKACHU = {
 
 local activeMod
 local activeGame
+
+local function modernBattleUIMode()
+  if not activeMod then return "on" end
+  local ok, value = pcall(activeMod.options.get, activeMod.options,
+    "modern_battle_ui")
+  if not ok or value == nil or value == true then return "on" end
+  if value == false then return "off" end
+  return value == "mod" and "mod" or value == "off" and "off" or "on"
+end
+
+local function modernBattleUIEnabled()
+  return modernBattleUIMode() == "on"
+end
 local LOCATION_OVERLAY_KEY = "__qolLocationBannerOverlay"
 local locationStates = setmetatable({}, { __mode = "k" })
 local locationOverlays = setmetatable({}, { __mode = "k" })
@@ -1278,7 +1291,13 @@ local function installMenuLayout()
     local pcMenu = opts.noSound or (parent and parent.gen1BetterMenusPC)
     local centerPCMenu = isCenterPCMenu(items, opts)
     if centerPCMenu then
-      opts.tx, opts.tw = 0, UI_TW
+      local widest = 0
+      for _, item in ipairs(items) do
+        widest = math.max(widest, #(Font.split(item.label or "")))
+      end
+      opts.tx = 0
+      opts.tw = widest + 3
+      opts.th = #items * (opts.rowStep or 2) + 2
     end
     local titleMenu = game and game.stack
       and getmetatable(game.stack:top()) == TitleState
@@ -1343,7 +1362,10 @@ local function installMenuLayout()
       self.gen1BetterMenusPC = true
       self.gen1BetterMenusCenterPC = centerPCMenu
       self.isWideBattleLayout = function() return false end
-      if not centerPCMenu and not self.anchor
+      if centerPCMenu then
+        self.tx = math.floor((UI_TW - self.tw) / 2)
+        self.ty = math.floor((UI_TH - self.th) / 2)
+      elseif not self.anchor
           and not (parent and getmetatable(parent) == ListMenu) then
         self.tx = self.tx + (UI_TW - 20)
       end
@@ -2517,48 +2539,157 @@ return function(mod, menuColors)
   activeMod = mod
 
   local qolCompatGame
-  local enforcingQolCompatibility = false
-  local function disableConflictingQolBattleFeatures(game)
-    if enforcingQolCompatibility or not game
-        or not mod.find("quality_of_life") then return end
+  local QOL_BATTLE_COMPAT_INITIALIZED = "qol_battle_compat_initialized"
+  local enforcingQolBattleGate = false
+
+  local function qolBattleGateReason(game)
+    local options = game and game.save and game.save.options
+    if not options or options.battleLayout ~= "wide"
+        or not mod.find("quality_of_life") then return nil end
+    if options.battleHud == "extended" then return "EXTENDED" end
+    if modernBattleUIMode() == "on" then return "MODERN UI" end
+    return nil
+  end
+
+  local function enforceQolBattleGate(game)
+    local reason = qolBattleGateReason(game)
+    if enforcingQolBattleGate or not reason then return false end
+    enforcingQolBattleGate = true
+    local manager = ManagerState.new(game)
+    if reason == "EXTENDED" and modernBattleUIMode() ~= "on" then
+      manager:setOption("gen1-better-menus", "modern_battle_ui", "on")
+    end
     local loader = game.mods
     local values = loader and loader.modOptions
       and loader.modOptions.quality_of_life
-    if type(values) ~= "table" then return end
-    local disableCaught = values.qol_caught_indicator ~= nil
-      and values.qol_caught_indicator ~= "off"
-    local disableXp = values.qol_exp_bar ~= nil
-      and values.qol_exp_bar ~= "off"
-    if not disableCaught and not disableXp then return end
+    if type(values) == "table" then
+      if values.qol_caught_indicator ~= nil
+          and values.qol_caught_indicator ~= "off" then
+        manager:setOption("quality_of_life", "qol_caught_indicator", "off")
+      end
+      if values.qol_exp_bar ~= nil and values.qol_exp_bar ~= "off" then
+        manager:setOption("quality_of_life", "qol_exp_bar", "off")
+      end
+    end
+    enforcingQolBattleGate = false
+    return true
+  end
 
-    enforcingQolCompatibility = true
-    local manager = ManagerState.new(game)
-    if disableCaught then
-      manager:setOption("quality_of_life", "qol_caught_indicator", "off")
+  local function initializeBattleUiCompatibility(game)
+    if not game then return end
+    if mod.options:get(QOL_BATTLE_COMPAT_INITIALIZED) ~= true then
+      local manager = ManagerState.new(game)
+      manager:setOption("gen1-better-menus",
+        QOL_BATTLE_COMPAT_INITIALIZED, true)
     end
-    if disableXp then
-      manager:setOption("quality_of_life", "qol_exp_bar", "off")
-    end
-    enforcingQolCompatibility = false
-    mod.log:info("disabled incompatible Quality of Life battle overlays")
+    enforceQolBattleGate(game)
   end
 
   mod.events:on("game.ready", function(event)
     qolCompatGame = event and event.game
     activeGame = qolCompatGame
-    disableConflictingQolBattleFeatures(qolCompatGame)
+    local savedMode = mod.options:get("modern_battle_ui")
+    if type(savedMode) == "boolean" and qolCompatGame then
+      local manager = ManagerState.new(qolCompatGame)
+      manager:setOption("gen1-better-menus", "modern_battle_ui",
+        savedMode and "on" or "off")
+    end
+    initializeBattleUiCompatibility(qolCompatGame)
   end)
   mod.events:on("mod.options_changed", function(event)
+    if event and event.mod == "gen1-better-menus"
+        and event.key == "modern_battle_ui" then
+      if qolBattleGateReason(qolCompatGame) then
+        enforceQolBattleGate(qolCompatGame)
+      elseif modernBattleUIMode() ~= "on" and qolCompatGame then
+        local manager = ManagerState.new(qolCompatGame)
+        manager:setOption("gen1-better-menus", "pokedex_indicator", "off")
+      end
+    end
     if event and event.mod == "quality_of_life"
         and (event.key == "qol_caught_indicator"
           or event.key == "qol_exp_bar") then
-      disableConflictingQolBattleFeatures(qolCompatGame)
+      enforceQolBattleGate(qolCompatGame)
     end
   end)
 
+  mod.hooks:wrap("ui.options.rows", function(next, game, rows)
+    local out = next(game, rows)
+    for _, row in ipairs(out or {}) do
+      if (row.id == "battleLayout" or row.id == "battleHud")
+          and type(row.step) == "function" then
+        local step = row.step
+        row.step = function(g, ...)
+          local result = step(g, ...)
+          enforceQolBattleGate(g)
+          return result
+        end
+      end
+    end
+    return out
+  end)
+
+  ManagerState.gen1BetterMenusQolBattleControl = {
+    reason = qolBattleGateReason,
+    enforce = enforceQolBattleGate,
+  }
+
+  local function decorateQolBattleGate(screen)
+    if not screen or screen.__gen1BetterMenusQolBattleGate then return screen end
+    local update = screen.update
+    if type(update) ~= "function" then return screen end
+
+    for _, row in ipairs(screen.rows or {}) do
+      if row.key == "qol_caught_indicator" or row.key == "qol_exp_bar" then
+        local value = row.value
+        row.value = function(g)
+          local control = ManagerState.gen1BetterMenusQolBattleControl
+          local reason = control and control.reason(g)
+          return reason and "OFF (MODERN UI)" or value(g)
+        end
+      end
+    end
+
+    screen.update = function(self, ...)
+      local control = ManagerState.gen1BetterMenusQolBattleControl
+      local reason = control and control.reason(self.game)
+      local row = self.rows and self.rows[self.index]
+      local gated = reason and row
+        and (row.key == "qol_caught_indicator" or row.key == "qol_exp_bar")
+      local key = gated and row.key or nil
+      if gated then row.key = nil end
+      if reason then control.enforce(self.game) end
+      local result = update(self, ...)
+      if gated then row.key = key end
+      if reason then control.enforce(self.game) end
+      return result
+    end
+    screen.__gen1BetterMenusQolBattleGate = true
+    return screen
+  end
+
+  local function installQolBattleStackGate(game)
+    local stack = game and game.stack
+    if not stack then return end
+    stack.gen1BetterMenusDecorateQolBattleGate = decorateQolBattleGate
+    if stack.__gen1BetterMenusQolBattlePush then return end
+
+    local push = stack.push
+    stack.push = function(self, state, ...)
+      if state and state.screenId == "QualityOfLife" then
+        local decorate = self.gen1BetterMenusDecorateQolBattleGate
+        if decorate then decorate(state) end
+      end
+      return push(self, state, ...)
+    end
+    stack.__gen1BetterMenusQolBattlePush = true
+  end
+  mod.events:on("game.ready", function(event)
+    installQolBattleStackGate(event and event.game)
+  end)
+
   -- The Mod Manager builds its rows from the static option schema. Decorate
-  -- only BetterMenus' palette row so the saved choice remains untouched while
-  -- an OG game palette temporarily owns the UI.
+  -- BetterMenus-owned rows whose availability depends on live game state.
   ManagerState.gen1BetterMenusOgPaletteControl = {
     locked = useStockOgMenuPalette,
     label = lockedOgMenuPaletteLabel,
@@ -2595,6 +2726,27 @@ return function(mod, menuColors)
             row.step = function(game, dir)
               game = game or self.game
               if control and control.forcedUnlocked(game) then return true end
+              return normalStep and normalStep(game, dir) or false
+            end
+          elseif row.id == "modern_battle_ui" then
+            local normalValue, normalStep = row.value, row.step
+            row.value = function(game)
+              game = game or self.game
+              local battleControl =
+                ManagerState.gen1BetterMenusQolBattleControl
+              if battleControl and battleControl.reason(game) == "EXTENDED" then
+                return "ON (EXTENDED)"
+              end
+              return normalValue and normalValue(game) or "ON"
+            end
+            row.step = function(game, dir)
+              game = game or self.game
+              local battleControl =
+                ManagerState.gen1BetterMenusQolBattleControl
+              if battleControl and battleControl.reason(game) == "EXTENDED" then
+                battleControl.enforce(game)
+                return true
+              end
               return normalStep and normalStep(game, dir) or false
             end
           end
@@ -2754,7 +2906,7 @@ return function(mod, menuColors)
 	  end
 
 	  local installedHud, hudInstallErr = pcall(installHud, mod,
-		effectiveMenuPalette, useStockOgMenuPalette)
+		effectiveMenuPalette, useStockOgMenuPalette, modernBattleUIMode)
 	  if not installedHud then
 		mod.log:error("battle information HUD failed: %s",
 		  tostring(hudInstallErr))
@@ -2832,19 +2984,27 @@ return function(mod, menuColors)
 		{ "MINT", "mint" },
 		{ "GRAPE", "grape" },
       } },
-    { key = "inverse", label = "INVERSE", type = "toggle",
+    { key = "inverse", label = "Inverse", type = "toggle",
       default = false },
-	{ key = "override_og_menu_palette", label = "UNLOCK MENU PALETTE", type = "toggle",
+	{ key = "override_og_menu_palette", label = "Unlock Menu Palette", type = "toggle",
 	  default = true },
-    { key = "modern_pc_ui", label = "MODERN PC UI", type = "toggle",
+    { key = "modern_pc_ui", label = "Modern PC UI", type = "toggle",
       default = false },
-    { key = "modern_bag_ui", label = "MODERN BAG UI", type = "toggle",
+    { key = "modern_bag_ui", label = "Modern Bag UI", type = "toggle",
       default = true },
-    { key = "marquee_text", label = "MARQUEE TEXT", type = "toggle",
+    { key = "modern_battle_ui", label = "Modern Battle UI", type = "choice",
+      default = "on",
+      choices = {
+        { "OFF", "off" },
+        { "ON", "on" },
+        { "MOD", "mod" },
+      } },
+    { key = "marquee_text", label = "Marquee Text", type = "toggle",
       default = true },
-    { key = "pokedex_indicator", label = "POKéDEX INDICATOR", type = "choice",
+    { key = "pokedex_indicator", label = "Pokédex Indicator", type = "choice",
       default = "default",
       choices = {
+        { "OFF", "off" },
         { "DEFAULT", "default" },
         { "RED", "red" },
       } },
@@ -2891,7 +3051,7 @@ return function(mod, menuColors)
 
   local COMPACT_VISIBLE = 13
 
-  local function compactState(game, title, rows, onClose, wide)
+  local function compactState(game, title, rows, onClose, wide, fixed, onStart)
     local selectable = {}
     for i, row in ipairs(rows) do
       if row.selectable ~= false then selectable[#selectable + 1] = i end
@@ -2907,12 +3067,18 @@ return function(mod, menuColors)
       local maxTw = wide and (UI_TW - 2) or 20
       local maxLabel = title and Font.width(Strings(title)) or 0
       local visible = math.min(COMPACT_VISIBLE, #rows - state.scroll)
-      for slot = 1, visible do
-        local row = rows[state.scroll + slot]
+      local widthFirst = fixed and 1 or (state.scroll + 1)
+      local widthLast = fixed and #rows or (state.scroll + visible)
+      for rowIndex = widthFirst, widthLast do
+        local row = rows[rowIndex]
         if row and row.label then
           local rowWidth = Font.width(Strings(row.label))
           if wide and row.value then
-            rowWidth = rowWidth + 8 + Font.width(Strings(row.value(game)))
+            local valueWidth = Font.width(Strings(row.value(game)))
+            for _, value in ipairs(row.widthValues or {}) do
+              valueWidth = math.max(valueWidth, Font.width(Strings(value)))
+            end
+            rowWidth = rowWidth + 8 + valueWidth
           end
           maxLabel = math.max(maxLabel, rowWidth)
         end
@@ -2926,7 +3092,13 @@ return function(mod, menuColors)
         if row and row.value then
           local label = Strings(row.label or "")
           local value = Strings(row.value(game))
-          local valueX = (tw - 1) * 8 - Font.width(value)
+          local valueWidth = Font.width(value)
+          if fixed then
+            for _, candidate in ipairs(row.widthValues or {}) do
+              valueWidth = math.max(valueWidth, Font.width(Strings(candidate)))
+            end
+          end
+          local valueX = (tw - 1) * 8 - valueWidth
           if 16 + Font.width(label) + 8 > valueX then lines = 2 end
         end
         layouts[slot] = lines
@@ -3004,11 +3176,14 @@ return function(mod, menuColors)
       elseif input:wasPressed("right") then
         local row = rows[selectable[self.selection]]
         if row and row.step then row.step(game, 1) end
+      elseif input:wasPressed("start") and onStart then
+        onStart(game)
+        return
       elseif input:wasPressed("a") then
         local row = rows[selectable[self.selection]]
         if row then
           if row.activate then row.activate(game)
-          elseif row.step then row.step(game, 1) end
+          elseif row.describe then row.describe(game) end
         end
       elseif input:wasPressed("b") then
         game.stack:pop()
@@ -3260,17 +3435,53 @@ return function(mod, menuColors)
     return entries
   end
 
-  local function betterMenusState(game)
+  local function descriptionState(game, parent, text)
+    local pages = TextBox.paginate(Strings(text), 30)
+    local lines = pages[1] or {}
+    local state = {
+      game = game, isOpaque = false, holdsUIAnchors = true,
+    }
+    local tw, th = 34, 8
+    local tx, ty = math.floor((UI_TW - tw) / 2), math.floor((UI_TH - th) / 2)
+    function state:uiSize() return UI_W, UI_H end
+    function state:sgbPalettes()
+      local zones = parent:sgbPalettes() or {}
+      zones[#zones + 1] = PaletteFX.zone(effectiveMenuPalette(game),
+        tx, ty, tx + tw - 1, ty + th - 1)
+      return zones
+    end
+    function state:draw()
+      parent:draw()
+      Font.drawBox(tx, ty, tw, th)
+      love.graphics.setColor(0, 0, 0, 1)
+      for i = 1, math.min(#lines, th - 2) do
+        Font.draw(lines[i], (tx + 1) * 8, (ty + i) * 8)
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    function state:update()
+      local input = game.input
+      if input:wasPressed("a") or input:wasPressed("b")
+          or input:wasPressed("start") then
+        game.stack:pop()
+      end
+    end
+    return state
+  end
+
+  local function betterMenusState(game, reopenStart)
     local rows = {
       {
-        label = "UNLOCK MENU PALETTE",
+        label = "Unlock Menu Palette",
         value = function(g) return menuPaletteUnlocked(g) and "ON" or "OFF" end,
+        widthValues = { "ON", "OFF" },
         step = function(g)
           if menuPaletteForcedUnlocked(g) then return true end
           setOption(g, "override_og_menu_palette",
             not activeMod.options:get("override_og_menu_palette"))
           return true
         end,
+        description = "Keep this off if you want the menu palette to follow your selected OG game palette, such as Game Boy or Black and White OR turn it on to choose any menu palette you want",
       },
     }
     local function addGroup(label, choices)
@@ -3283,39 +3494,108 @@ return function(mod, menuColors)
         end,
       }
     end
-    if groovyAvailable() then addGroup("GROOVY", groovyMenuPalettes) end
-    addGroup("DEFAULT", defaultMenuPalettes)
+    if groovyAvailable() then addGroup("Groovy", groovyMenuPalettes) end
+    addGroup("Default", defaultMenuPalettes)
     addGroup("BetterMenus", betterMenusPalettes)
     rows[#rows + 1] = { selectable = false, separator = true }
     rows[#rows + 1] = {
-      label = "INVERSE",
+      label = "Inverse",
       value = function() return activeMod.options:get("inverse") and "ON" or "OFF" end,
+      widthValues = { "ON", "OFF" },
       step = function(g) setOption(g, "inverse", not activeMod.options:get("inverse")) end,
+      description = "Invert your color palette",
     }
     rows[#rows + 1] = {
-      label = "MODERN PC UI",
+      label = "Modern PC UI",
       value = function() return activeMod.options:get("modern_pc_ui") and "ON" or "OFF" end,
+      widthValues = { "ON", "OFF" },
       step = function(g) setOption(g, "modern_pc_ui", not activeMod.options:get("modern_pc_ui")) end,
     }
     rows[#rows + 1] = {
-      label = "MODERN BAG UI",
+      label = "Modern Bag UI",
       value = function() return activeMod.options:get("modern_bag_ui") ~= false and "ON" or "OFF" end,
+      widthValues = { "ON", "OFF" },
       step = function(g) setOption(g, "modern_bag_ui", not (activeMod.options:get("modern_bag_ui") ~= false)) end,
     }
     rows[#rows + 1] = {
-      label = "MARQUEE TEXT",
-      value = function() return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF" end,
-      step = function(g) setOption(g, "marquee_text", not (activeMod.options:get("marquee_text") ~= false)) end,
-    }
-    rows[#rows + 1] = {
-      label = "POKéDEX INDICATOR",
-      value = function() return activeMod.options:get("pokedex_indicator") == "red" and "RED" or "DEFAULT" end,
+      label = "Modern Battle UI",
+      value = function(g)
+        return qolBattleGateReason(g) == "EXTENDED"
+          and "ON (EXTENDED)" or modernBattleUIMode():upper()
+      end,
+      widthValues = { "ON", "OFF", "MOD", "ON (EXTENDED)" },
       step = function(g)
-        setOption(g, "pokedex_indicator",
-          activeMod.options:get("pokedex_indicator") == "red" and "default" or "red")
+        if qolBattleGateReason(g) == "EXTENDED" then
+          enforceQolBattleGate(g)
+          return
+        end
+        local mode = modernBattleUIMode()
+        mode = mode == "on" and "off" or mode == "off" and "mod" or "on"
+        setOption(g, "modern_battle_ui", mode)
+        if mode ~= "on" then setOption(g, "pokedex_indicator", "off") end
+      end,
+      description = function()
+        local mode = modernBattleUIMode()
+        if mode == "on" then
+          return "This will add an XP bar to the user Pokémon panel and a Pokédex 'Caught' indicator to the enemy Pokémon panel"
+        elseif mode == "off" then
+          return "BetterMenus will provide palette coverage for stock drawn Battle UI"
+        end
+        return "Use this option if you want to use a custom Battle UI or you see issues with your preferred mod using the OFF setting"
       end,
     }
-    return compactState(game, nil, rows, nil, true)
+    rows[#rows + 1] = {
+      label = "Marquee Text",
+      value = function() return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF" end,
+      widthValues = { "ON", "OFF" },
+      step = function(g) setOption(g, "marquee_text", not (activeMod.options:get("marquee_text") ~= false)) end,
+      description = "Use this to disable scrolling text in the menus if you prefer",
+    }
+    rows[#rows + 1] = {
+      label = "Pokédex Indicator",
+      value = function()
+        if not modernBattleUIEnabled() then return "OFF" end
+        local value = activeMod.options:get("pokedex_indicator")
+        if value == "off" then return "OFF" end
+        return value == "red" and "RED" or "DEFAULT"
+      end,
+      widthValues = { "OFF", "DEFAULT", "RED" },
+      step = function(g)
+        if not modernBattleUIEnabled() then
+          setOption(g, "pokedex_indicator", "off")
+          return
+        end
+        local value = activeMod.options:get("pokedex_indicator")
+        setOption(g, "pokedex_indicator", value == "off" and "default"
+          or value == "default" and "red" or "off")
+      end,
+      description = function()
+        return activeMod.options:get("pokedex_indicator") == "default"
+          and "The Poké Ball follows the menu palette theme" or nil
+      end,
+    }
+    local state
+    for _, row in ipairs(rows) do
+      if row.description then
+        local describedRow = row
+        describedRow.describe = function(g)
+          local text
+          if type(describedRow.description) == "function" then
+            text = describedRow.description(g)
+          else
+            text = describedRow.description
+          end
+          if text then g.stack:push(descriptionState(g, state, text)) end
+        end
+      end
+    end
+    state = compactState(game, nil, rows, nil, true, true, function(g)
+      if g.stack:top() == state then g.stack:pop() end
+      local top = g.stack:top()
+      if top and top.gen1BetterMenusColorsMenu then g.stack:pop() end
+      if reopenStart then reopenStart() end
+    end)
+    return state
   end
 
   local function colorsState(game, reopenStart)
@@ -3343,9 +3623,11 @@ return function(mod, menuColors)
     rows[#rows + 1] = { selectable = false, separator = true }
     rows[#rows + 1] = {
       label = "BetterMenus",
-      activate = function(g) g.stack:push(betterMenusState(g)) end,
+      activate = function(g) g.stack:push(betterMenusState(g, reopenStart)) end,
     }
-    return compactState(game, nil, rows, reopenStart)
+    local state = compactState(game, nil, rows, reopenStart)
+    state.gen1BetterMenusColorsMenu = true
+    return state
   end
 
   mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
@@ -3471,6 +3753,7 @@ return function(mod, menuColors)
   end)
   mod.hooks:wrap("battle.overlay", function(next, battle)
     next(battle)
+    if not modernBattleUIEnabled() then return end
     if not (battle and battle.wideLayout and battle:wideLayout()
             and battle.extendedHUD and battle:extendedHUD()) then return end
     local g = love.graphics
@@ -3623,7 +3906,8 @@ end
     end
 
 	local pipelineId = Pipelines.worldPipeline()
-    if not (top and getmetatable(top) == BattleState
+    if not (modernBattleUIEnabled()
+            and top and getmetatable(top) == BattleState
             and top.extendedHUD and top:extendedHUD()
             and top.wantsFillScale and top:wantsFillScale()
             and options and options.battleBg == "white"
@@ -3678,6 +3962,8 @@ end
     end
 
     if mt == BattleState and top.wideLayout and top:wideLayout() then
+      local battleMode = modernBattleUIMode()
+      if battleMode ~= "mod" then
       -- A locked OG engine palette already owns the complete wide surface.
       -- Adding panel zones on top transforms the arena beneath transparent
       -- HUD interiors a second time, leaving large opaque rectangles. Keep
@@ -3689,10 +3975,28 @@ end
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 0, 15, 3)
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 23, 7, 37, 12)
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 13, 37, 17)
+        -- Standard WIDE draws its bottom message/command panels directly on
+        -- the main battle canvas.  The detached-HUD zone above is isolated
+        -- from that canvas, so add the same exact 104..143 panel band as a
+        -- main-canvas zone in ON/OFF. MOD remains the complete opt-out.
+        if not (top.extendedHUD and top:extendedHUD()) then
+          out[#out + 1] = PaletteFX.zone(
+            effectiveMenuPalette(), 0, 13, 37, 17)
+        end
       end
-      -- hud.lua adds pixel-tight true-color zones for the two-row semantic
-      -- HP/EXP fills. Exempting these complete eight-pixel rows would also
-      -- preserve raw white source pixels around the labels and tracks.
+      if battleMode == "off" then
+        out[#out + 1] = {
+          colors = false, x = 8, y = 16, w = 112, h = 8,
+          gen1BetterMenusBattleUI = true,
+        }
+        out[#out + 1] = {
+          colors = false, x = 192, y = 72, w = 112, h = 8,
+          gen1BetterMenusBattleUI = true,
+        }
+      end
+      -- ON preserves only semantic meter fills. OFF restores each complete
+      -- stock HP element (label, track, and fill) after palette treatment.
+      end
     else
       local title
       for i = 1, #states do

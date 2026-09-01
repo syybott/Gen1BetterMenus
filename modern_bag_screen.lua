@@ -2225,9 +2225,13 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       local Menu = require("src.ui.Menu")
       if owner and state and getmetatable(state) == Menu then
         state.__modernBagResponsiveOverlay = true
-        state.uiSize = function() return owner:uiSize() end
+        local layout = type(owner.modernBagLayoutInfo) == "function"
+          and owner:modernBagLayoutInfo() or nil
+        local width = layout and layout.width or select(1, owner:uiSize())
+        local height = layout and (layout.canvasHeight or layout.height)
+          or select(2, owner:uiSize())
+        state.uiSize = function() return width, height end
         state.holdsUIAnchors = true
-        local width, height = owner:uiSize()
         state.tx = math.max(0, math.floor((width / 8 - state.tw) / 2))
         state.ty = math.max(0, math.floor((height / 8 - state.th) / 2))
         state.sgbPalettes = function(_, activeGame)

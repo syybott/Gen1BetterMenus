@@ -1,4 +1,5 @@
-return function(mod, menuColors, useStockOgMenuPalette)
+return function(mod, menuColors, useStockOgMenuPalette,
+    modernBattleUIMode)
   local Font = require("src.render.Font")
   local Growth = require("src.pokemon.Growth")
   local HudTiles = require("src.render.HudTiles")
@@ -47,8 +48,11 @@ return function(mod, menuColors, useStockOgMenuPalette)
   }
 
   local function setting()
-    local ok, value = pcall(mod.options.get, mod.options, "battle_info")
-    return not ok or value == nil or value == true
+    return not modernBattleUIMode or modernBattleUIMode() == "on"
+  end
+
+  local function battleUiMode()
+    return modernBattleUIMode and modernBattleUIMode() or "on"
   end
 
   local function battleOwnsUiPass(battle)
@@ -244,6 +248,9 @@ return function(mod, menuColors, useStockOgMenuPalette)
   end
 
   local function isCaught(battle, battler)
+    local ok, indicator = pcall(mod.options.get, mod.options,
+      "pokedex_indicator")
+    if ok and indicator == "off" then return false end
     if battle.kind ~= "wild" then return false end
     local owned = battle.game and battle.game.save
       and battle.game.save.pokedex and battle.game.save.pokedex.owned
@@ -857,8 +864,12 @@ end
     return result
   end
 
-	local originalWideDraw = WideBattle.draw
+	if not rawget(WideBattle, "_gen1BetterMenusOriginalDraw") then
+	  WideBattle._gen1BetterMenusOriginalDraw = WideBattle.draw
+	end
+	local originalWideDraw = WideBattle._gen1BetterMenusOriginalDraw
 	WideBattle.draw = function(battle, ...)
+	  if not setting() then return originalWideDraw(battle, ...) end
 	  local args = { ... }
 
 	  local originalStatusHUDVisible = rawget(battle, "statusHUDVisible")
@@ -910,7 +921,10 @@ end
   -- edit that layer in place, then composite it where the original draw would
   -- have happened. This keeps the game's own tiles and drawing order without
   -- clearing holes through the battlefield underneath the player panel.
-  local originalClassicDrawHUDs = BattleState.drawHUDs
+  if not rawget(BattleState, "_gen1BetterMenusOriginalDrawHUDs") then
+    BattleState._gen1BetterMenusOriginalDrawHUDs = BattleState.drawHUDs
+  end
+  local originalClassicDrawHUDs = BattleState._gen1BetterMenusOriginalDrawHUDs
   local classicHudLayer
 
   local function getClassicHudLayer()
@@ -988,7 +1002,11 @@ end
     return drawClassicHud(battle, slide, args)
   end
 
-  local originalClassicZonePass = BattleState.drawZonePass
+  if not rawget(BattleState, "_gen1BetterMenusOriginalDrawZonePass") then
+    BattleState._gen1BetterMenusOriginalDrawZonePass = BattleState.drawZonePass
+  end
+  local originalClassicZonePass =
+    BattleState._gen1BetterMenusOriginalDrawZonePass
   BattleState.drawZonePass = function(battle, ...)
     local result = originalClassicZonePass(battle, ...)
     if classicEnhancementActive(battle, 0) then
@@ -1320,12 +1338,17 @@ end
     installDramaticBridges(ev and ev.game)
   end)
 
-local originalBattlePalettes = BattleState.sgbPalettes
+if not rawget(BattleState, "_gen1BetterMenusOriginalSgbPalettes") then
+  BattleState._gen1BetterMenusOriginalSgbPalettes = BattleState.sgbPalettes
+end
+local originalBattlePalettes = BattleState._gen1BetterMenusOriginalSgbPalettes
 
 BattleState.sgbPalettes = function(battle, ...)
   local zones = originalBattlePalettes(battle, ...) or {}
 
-  if not (battle and battle:wideLayout() and menuColors) then
+  local mode = battleUiMode()
+  if mode == "mod"
+      or not (battle and battle:wideLayout() and menuColors) then
     return zones
   end
 
@@ -1343,10 +1366,8 @@ BattleState.sgbPalettes = function(battle, ...)
 	  end
 	end
 
-	-- The HUD panels use the menu palette, but HP and EXP fills are semantic
-	-- colors. Re-blit only those two-pixel fills without the shade shader so
-	-- inverse mode cannot turn green/blue into a menu shade. Keeping the
-	-- opt-out this narrow also lets the custom XP X follow the menu palette.
+	-- ON preserves the semantic two-pixel fills used by the BetterMenus HUD.
+	-- OFF instead restores each complete stock HP element below.
 	local function trueColorHpTrack(battler, meter, y)
 	  if not battler then return end
 	  local x, w = meter.bodyX, meter.bodyWidth
@@ -1362,11 +1383,24 @@ BattleState.sgbPalettes = function(battle, ...)
 	-- and preserves their semantic fills in the anchored HUD palette pass.
 	-- Re-blitting the old coordinates leaves pale HP/EXP strips behind.
 	if not useStockOgMenuPalette(battle.game) and not battle:extendedHUD() then
-	  if enemyVisible(battle) then
-	    trueColorHpTrack(battle.enemy, WIDE_ENEMY_PANEL.meter, 19)
+	  if mode == "off" then
+	    if enemyVisible(battle) then
+	      zones[#zones + 1] = { colors = false,
+	        x = 8, y = 16, w = 112, h = 8 }
+	    end
+	    if playerVisible(battle) then
+	      zones[#zones + 1] = { colors = false,
+	        x = 192, y = 72, w = 112, h = 8 }
+	    end
+	  else
+	    if enemyVisible(battle) then
+	      trueColorHpTrack(battle.enemy, WIDE_ENEMY_PANEL.meter, 19)
+	    end
+	    if playerVisible(battle) then
+	      trueColorHpTrack(battle.player, WIDE_PLAYER_PANEL.meter, 75)
+	    end
 	  end
-	  if playerVisible(battle) then
-	    trueColorHpTrack(battle.player, WIDE_PLAYER_PANEL.meter, 75)
+	  if playerVisible(battle) and mode == "on" then
 	    local state = getBattleXpState(battle)
 	    local px = state.shown or 0
 	    if px > 0 then
