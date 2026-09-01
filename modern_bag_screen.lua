@@ -1307,6 +1307,11 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     end
   end
 
+  local function drawWallpaperDivider(layout)
+    gray(DARK)
+    love.graphics.rectangle("fill", 0, layout.listY - 3, layout.width, 1)
+  end
+
   local function drawList(menu, layout)
     gray(DARK)
     pixelRoundFill(layout.listX, layout.listY,
@@ -2010,6 +2015,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     drawBackdrop(layout)
     drawHeader(menu, layout)
     drawTabs(menu, layout, counts)
+    drawWallpaperDivider(layout)
     drawList(menu, layout)
     drawDetails(menu, layout)
     drawFooter(menu, layout)
