@@ -1900,7 +1900,7 @@ local function installSupportingScreens()
 	end
 
 	DexEntryMenu.isWideBattleLayout = function()
-	  return false
+	  return true
 	end
 
 	DexEntryMenu.isOpaque = false
@@ -1912,6 +1912,8 @@ local function installSupportingScreens()
 	  -- The Dex renderer still inherits the classic 160px clip.
 	  -- Remove it while drawing the centered page.
 	  love.graphics.setScissor()
+	  love.graphics.setColor(1, 1, 1, 1)
+	  love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
 
 	  love.graphics.push()
 	  love.graphics.translate(72, 0)
@@ -2001,7 +2003,7 @@ local function installSupportingScreens()
           local ok, img = pcall(Assets.image, path)
           if ok and img then
             local sw, sh = img:getDimensions()
-            local sx = 23
+            local sx = 21
             local sy = 101
             if not trueColor then
               local monPal = PaletteFX.monPal(game.data, mon.species)
@@ -2019,14 +2021,14 @@ local function installSupportingScreens()
             end
             PaletteFX.markTrueColor(sx + math.floor((UI_W - Renderer.WIDTH) / 2), sy, sw, sh)
           else
-            PartyMenu.drawIcon(game, mon, 23, 101, false, 0)
+            PartyMenu.drawIcon(game, mon, 21, 101, false, 0)
           end
 
           -- 3. Species name to the right of sprite
           local def = game.data.pokemon and game.data.pokemon[mon.species]
           local name = def and def.name or mon.species or ""
           love.graphics.setColor(0, 0, 0, 1)
-          Font.draw(name, 65, 104)
+          Font.draw(name, 67, 104)
         end
 
         -- 4. NICKNAME? below species name with '?' moved up by 1 pixel
@@ -2034,15 +2036,15 @@ local function installSupportingScreens()
         local title = screen.title or "NICKNAME?"
         if title:sub(-1) == "?" then
           local prefix = title:sub(1, #title - 1)
-          Font.draw(prefix, 65, 115)
-          Font.draw("?", 65 + Font.width(prefix), 114)
+          Font.draw(prefix, 67, 115)
+          Font.draw("?", 67 + Font.width(prefix), 114)
         else
-          Font.draw(title, 65, 115)
+          Font.draw(title, 67, 115)
         end
 
         -- 5. Nickname entry line shifted right by approx 20px
         local maxLen = screen.maxLen or 10
-        local slotStartX = math.floor((160 - maxLen * 8) / 2) + 24
+        local slotStartX = math.floor((160 - maxLen * 8) / 2) + 26
         for i = 1, maxLen do
           Font.draw(screen.glyphs[i] or "-", slotStartX + (i - 1) * 8, 132)
         end

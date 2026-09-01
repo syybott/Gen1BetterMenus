@@ -508,7 +508,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     local expandedFooter = menu and menu.modernBagPrompt
     local footerH = stacked and 20 or (expandedFooter and 16 or FOOTER_H)
     local footerY = height - footerH
-    local listY = contentY + 3
+    local listY = contentY + (wide and 4 or 3)
 
     if stacked then
       local detailMinH = 82
@@ -1309,7 +1309,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
 
   local function drawWallpaperDivider(layout)
     gray(DARK)
-    love.graphics.rectangle("fill", 0, layout.listY - 3, layout.width, 1)
+    love.graphics.rectangle("fill", 0, layout.contentY, layout.width, 1)
   end
 
   local function drawList(menu, layout)
