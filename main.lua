@@ -1879,7 +1879,6 @@ local function installSupportingScreens()
       end
     end
     if wideBattle or self.mon then
-      local originalDraw = self.draw
       self.gen1BetterMenusSolidNickname = true
       self.uiSize = function() return UI_W, UI_H end
       self.isWideBattleLayout = function() return true end
@@ -1894,11 +1893,89 @@ local function installSupportingScreens()
         return { PaletteFX.zone(palette, 0, 0, UI_TW - 1, UI_TH - 1) }
       end
       self.draw = function(screen)
+        if screen.choosing then return end
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.rectangle("fill", 0, 0, UI_W, UI_H)
         love.graphics.push()
         love.graphics.translate(math.floor((UI_W - Renderer.WIDTH) / 2), 0)
-        originalDraw(screen)
+
+        -- 1. Keyboard box (tx = 0, ty = 1, tw = 21, th = 12) shifted upward by 4px
+        love.graphics.push()
+        love.graphics.translate(0, -4)
+        Font.drawBox(0, 1, 21, 12)
+
+        local rowY = { 20, 34, 47, 61, 74, 88 }
+        love.graphics.setColor(0, 0, 0, 1)
+        for r, row in ipairs(screen:grid()) do
+          local y = rowY[r] or (r * 14)
+          for c, cell in ipairs(row) do
+            Font.draw(Strings(cell), c * 16, y)
+          end
+        end
+        local curY = rowY[screen.row] or (screen.row * 14)
+        if screen.row < #screen:grid() then
+          Font.drawCode(Theme.cursor, screen.col * 16 - 8, curY)
+        else
+          Font.drawCode(Theme.cursor, 8, curY)
+        end
+        love.graphics.pop()
+
+        -- 2. Lower-left Pokémon battle front sprite
+        local mon = screen.mon or self.mon
+        if mon then
+          local Assets = require("src.render.Assets")
+          local Sprites = require("src.pokemon.Sprites")
+          local path, trueColor = Sprites.path(game.data, mon.species, "front", { mon = mon, kind = "battle" })
+          local ok, img = pcall(Assets.image, path)
+          if ok and img then
+            local sw, sh = img:getDimensions()
+            local sx = 23
+            local sy = 101
+            if not trueColor then
+              local monPal = PaletteFX.monPal(game.data, mon.species)
+              local shader = monPal and PaletteFX.shader()
+              if shader then
+                PaletteFX.sendColors(shader, monPal)
+                love.graphics.setShader(shader)
+              end
+              love.graphics.setColor(1, 1, 1, 1)
+              love.graphics.draw(img, sx, sy)
+              if shader then love.graphics.setShader() end
+            else
+              love.graphics.setColor(1, 1, 1, 1)
+              love.graphics.draw(img, sx, sy)
+            end
+            PaletteFX.markTrueColor(sx + math.floor((UI_W - Renderer.WIDTH) / 2), sy, sw, sh)
+          else
+            PartyMenu.drawIcon(game, mon, 23, 101, false, 0)
+          end
+
+          -- 3. Species name to the right of sprite
+          local def = game.data.pokemon and game.data.pokemon[mon.species]
+          local name = def and def.name or mon.species or ""
+          love.graphics.setColor(0, 0, 0, 1)
+          Font.draw(name, 65, 104)
+        end
+
+        -- 4. NICKNAME? below species name with '?' moved up by 1 pixel
+        love.graphics.setColor(0, 0, 0, 1)
+        local title = screen.title or "NICKNAME?"
+        if title:sub(-1) == "?" then
+          local prefix = title:sub(1, #title - 1)
+          Font.draw(prefix, 65, 115)
+          Font.draw("?", 65 + Font.width(prefix), 114)
+        else
+          Font.draw(title, 65, 115)
+        end
+
+        -- 5. Nickname entry line shifted right by approx 20px
+        local maxLen = screen.maxLen or 10
+        local slotStartX = math.floor((160 - maxLen * 8) / 2) + 24
+        for i = 1, maxLen do
+          Font.draw(screen.glyphs[i] or "-", slotStartX + (i - 1) * 8, 132)
+        end
+        love.graphics.setColor(1, 1, 1, 1)
+
         love.graphics.pop()
         clearWideBattleHudTrueColor()
       end
