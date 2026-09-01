@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.1.0
+-- Gen1BetterMenus 1.1.1
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -47,9 +47,16 @@ local TITLE_INFO_TH = 10
 -- and the other three edges retain the engine's original placement.
 if not Font.gen1BetterMenusLeftBorderFix then
   local originalDrawBox = Font.drawBox
+  local function usesStockBorder()
+    for key, code in pairs(Font.DEFAULT_BORDER or {}) do
+      if Font.BORDER[key] ~= code then return false end
+    end
+    return true
+  end
+
   Font.drawBox = function(tx, ty, tw, th, fill)
     originalDrawBox(tx, ty, tw, th, fill)
-    if th <= 2 then return end
+    if th <= 2 or not usesStockBorder() then return end
 
     local r, g, b, a = love.graphics.getColor()
     if type(fill) == "table" and fill[1] and fill[2] and fill[3] then
