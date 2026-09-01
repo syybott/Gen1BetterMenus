@@ -13,6 +13,7 @@ local Strings = require("src.core.Strings")
 local OptionRows = require("src.ui.OptionRows")
 local Screens = require("src.ui.Screens")
 local OptionsMenu = require("src.ui.OptionsMenu")
+local PaletteScreen = require("src.ui.PaletteScreen")
 local ListMenu = require("src.ui.ListMenu")
 local Menu = require("src.ui.Menu")
 local BoxMenu = require("src.ui.BoxMenu")
@@ -320,9 +321,26 @@ local function usesOgEnginePalette(game)
   return OG_MENU_PALETTES[id] == true
 end
 
+local function hasCustomGamePalette(game)
+  game = game or activeGame
+  local value = game and game.save and game.save.options
+    and game.save.options.palette
+  return type(value) == "string" and value ~= ""
+end
+
+local function menuPaletteForcedUnlocked(game)
+  return hasCustomGamePalette(game) or not usesOgEnginePalette(game)
+end
+
+local function menuPaletteUnlocked(game)
+  return menuPaletteForcedUnlocked(game)
+    or (activeMod
+      and activeMod.options:get("override_og_menu_palette") == true)
+end
+
 local function useStockOgMenuPalette(game)
   if not activeMod then return false end
-  if activeMod.options:get("override_og_menu_palette") == true then
+  if menuPaletteUnlocked(game) then
     return false
   end
   return usesOgEnginePalette(game)
@@ -1635,11 +1653,22 @@ local function installLocationBanners(mod)
 end
 
 local function updateLocationBanner(game)
+  local function suppressed()
+    local states = game and game.stack and game.stack.states or {}
+    for i = 1, #states do
+      if states[i] and states[i].gen1BetterMenusSuppressLocationBanner then
+        return true
+      end
+    end
+    return false
+  end
+
   local world = game and game.overworld
   local overlay = world and rawget(world, LOCATION_OVERLAY_KEY)
   if overlay and not locationOverlays[overlay] then
     locationOverlays[overlay] = overlay.draw
     overlay.draw = function()
+      if suppressed() then return end
       local state = locationStates[world]
       if state and love.timer.getTime() < state.expiresAt then
         drawLocationBanner(world)
@@ -1648,6 +1677,7 @@ local function updateLocationBanner(game)
       end
     end
   end
+  if suppressed() then return false end
   local state = world and locationStates[world]
   return state and love.timer.getTime() < state.expiresAt
 end
@@ -2525,6 +2555,7 @@ return function(mod, menuColors)
   ManagerState.gen1BetterMenusOgPaletteControl = {
     locked = useStockOgMenuPalette,
     label = lockedOgMenuPaletteLabel,
+    forcedUnlocked = menuPaletteForcedUnlocked,
   }
   if not ManagerState.gen1BetterMenusOgPaletteRowsInstalled then
     local originalBuildOptionRows = ManagerState.buildOptionRows
@@ -2547,7 +2578,18 @@ return function(mod, menuColors)
               if control and control.locked(game) then return true end
               return normalStep and normalStep(game, dir) or false
             end
-            break
+          elseif row.id == "override_og_menu_palette" then
+            local normalValue, normalStep = row.value, row.step
+            row.value = function(game)
+              game = game or self.game
+              if control and control.forcedUnlocked(game) then return "ON" end
+              return normalValue and normalValue(game) or "ON"
+            end
+            row.step = function(game, dir)
+              game = game or self.game
+              if control and control.forcedUnlocked(game) then return true end
+              return normalStep and normalStep(game, dir) or false
+            end
           end
         end
       end
@@ -2785,8 +2827,8 @@ return function(mod, menuColors)
       } },
     { key = "inverse", label = "INVERSE", type = "toggle",
       default = false },
-	{ key = "override_og_menu_palette", label = "OVERRIDE OG MENU PALETTE", type = "toggle",
-	  default = false },
+	{ key = "override_og_menu_palette", label = "UNLOCK MENU PALETTE", type = "toggle",
+	  default = true },
     { key = "modern_pc_ui", label = "MODERN PC UI", type = "toggle",
       default = false },
     { key = "modern_bag_ui", label = "MODERN BAG UI", type = "toggle",
@@ -2801,8 +2843,512 @@ return function(mod, menuColors)
       } },
   })
   
-    mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
+  local defaultMenuPalettes = {
+    { "GAME BOY", "gameboy" },
+    { "BLACK AND WHITE", "blackwhite" },
+    { "OG RED", "ogred" },
+    { "ADVANCED", "redpp" },
+    { "SGB", "gbc" },
+  }
+  local betterMenusPalettes = {
+    { "SOULSILVER", "soulsilver" },
+    { "HEARTGOLD", "heartgold" },
+    { "FIRERED", "firered" },
+    { "LEAFGREEN", "leafgreen" },
+    { "CRYSTAL", "crystal" },
+    { "EMERALD", "emerald" },
+  }
+  local groovyMenuPalettes = {
+    { "AMIGA WB", "amiga_wb" }, { "AMIGA DP", "amiga_dp" },
+    { "C64", "c64" }, { "SPECTRUM", "spectrum" },
+    { "CGA", "cga" }, { "APPLE2", "apple2" },
+    { "POCKET", "pocket" }, { "GB LIGHT", "gblight" },
+    { "VIRTUAL BOY", "virtualboy" }, { "AMBER", "amber" },
+    { "PHOSPHOR", "phosphor" }, { "PLASMA", "plasma" },
+    { "RAINBOW", "rainbow" }, { "ACID", "acid" },
+    { "FUSCHIA", "fuchsia" }, { "SUNSET", "sunset" },
+    { "OCEAN", "ocean" }, { "FOREST", "forest" },
+    { "LAVA", "lava" }, { "ICE", "ice" },
+    { "CANDY", "candy" }, { "VAPOR", "vapor" },
+    { "NEON", "neon" }, { "TOXIC", "toxic" },
+    { "SEPIA", "sepia" }, { "NOIR", "noir" },
+    { "CHERRY", "cherry" }, { "MIDNIGHT", "midnight" },
+    { "GOLD", "gold" }, { "MINT", "mint" },
+    { "GRAPE", "grape" },
+  }
+
+  local function setOption(game, key, value)
+    local manager = ManagerState.new(game)
+    manager:setOption("gen1-better-menus", key, value)
+  end
+
+  local COMPACT_VISIBLE = 13
+
+  local function compactState(game, title, rows, onClose, wide)
+    local selectable = {}
+    for i, row in ipairs(rows) do
+      if row.selectable ~= false then selectable[#selectable + 1] = i end
+    end
+    local state = {
+      game = game, title = title, rows = rows,
+      selection = 1, scroll = 0,
+      isOpaque = false, holdsUIAnchors = true,
+    }
+
+    local function geometry()
+      local canvasTw = UI_TW
+      local maxTw = wide and (UI_TW - 2) or 20
+      local maxLabel = title and Font.width(Strings(title)) or 0
+      local visible = math.min(COMPACT_VISIBLE, #rows - state.scroll)
+      for slot = 1, visible do
+        local row = rows[state.scroll + slot]
+        if row and row.label then
+          local rowWidth = Font.width(Strings(row.label))
+          if wide and row.value then
+            rowWidth = rowWidth + 8 + Font.width(Strings(row.value(game)))
+          end
+          maxLabel = math.max(maxLabel, rowWidth)
+        end
+      end
+      local tw = math.max(8, math.min(maxTw, math.ceil((maxLabel + 24) / 8)))
+      local lineCount = title and 1 or 0
+      local layouts = {}
+      for slot = 1, visible do
+        local row = rows[state.scroll + slot]
+        local lines = 1
+        if row and row.value then
+          local label = Strings(row.label or "")
+          local value = Strings(row.value(game))
+          local valueX = (tw - 1) * 8 - Font.width(value)
+          if 16 + Font.width(label) + 8 > valueX then lines = 2 end
+        end
+        layouts[slot] = lines
+        lineCount = lineCount + lines
+      end
+      local th = math.min(18, lineCount + 2)
+      return math.floor((canvasTw - tw) / 2), math.floor((18 - th) / 2),
+        tw, th, visible, layouts
+    end
+
+    function state:uiSize() return UI_W, UI_H end
+    function state:frameGeometry() return geometry() end
+    function state:sgbPalettes()
+      local tx, ty, tw, th = geometry()
+      return { PaletteFX.zone(effectiveMenuPalette(game), tx, ty,
+        tx + tw - 1, ty + th - 1) }
+    end
+    function state:draw()
+      local tx, ty, tw, th, visible, layouts = geometry()
+      local ox, oy = tx * 8, ty * 8
+      Font.drawBox(tx, ty, tw, th)
+      love.graphics.setColor(0, 0, 0, 1)
+      local line = 1
+      if title then
+        Font.draw(Strings(title), ox + 16, oy + 8)
+        line = 2
+      end
+      local selectedRow = selectable[self.selection]
+      for slot = 1, visible do
+        local i = self.scroll + slot
+        local row = rows[i]
+        if not row then break end
+        local y = oy + line * 8
+        if row.separator then
+          love.graphics.rectangle("fill", ox + 8, y + 3,
+            (tw - 2) * 8, 1)
+        elseif row.heading then
+          Font.draw(Strings(row.label), ox + 8, y)
+        else
+          local label = Strings(row.label)
+          Font.draw(label, ox + 16, y)
+          if row.value then
+            local value = Strings(row.value(game))
+            if layouts[slot] == 2 then
+              Font.draw(value, ox + 24, y + 8)
+            else
+              Font.draw(value,
+                ox + (tw - 1) * 8 - Font.width(value), y)
+            end
+          end
+          if i == selectedRow then Font.drawCode(Theme.cursor, ox + 8, y) end
+        end
+        line = line + layouts[slot]
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    local function clamp()
+      local rowIndex = selectable[state.selection]
+      if rowIndex <= state.scroll then state.scroll = rowIndex - 1
+      elseif rowIndex > state.scroll + COMPACT_VISIBLE then
+        state.scroll = rowIndex - COMPACT_VISIBLE
+      end
+      state.scroll = math.max(0,
+        math.min(state.scroll, math.max(0, #rows - COMPACT_VISIBLE)))
+    end
+    function state:update()
+      local input = game.input
+      if input:wasPressed("up") then
+        self.selection = self.selection > 1 and self.selection - 1 or #selectable
+      elseif input:wasPressed("down") then
+        self.selection = self.selection < #selectable and self.selection + 1 or 1
+      elseif input:wasPressed("left") then
+        local row = rows[selectable[self.selection]]
+        if row and row.step then row.step(game, -1) end
+      elseif input:wasPressed("right") then
+        local row = rows[selectable[self.selection]]
+        if row and row.step then row.step(game, 1) end
+      elseif input:wasPressed("a") then
+        local row = rows[selectable[self.selection]]
+        if row then
+          if row.activate then row.activate(game)
+          elseif row.step then row.step(game, 1) end
+        end
+      elseif input:wasPressed("b") then
+        game.stack:pop()
+        if onClose then onClose() end
+        return
+      end
+      clamp()
+    end
+    clamp()
+    return state
+  end
+
+  local function transitionToChild(game, parent, child)
+    parent.gen1BetterMenusOpeningChild = true
+    if game.stack:top() == parent then game.stack:pop() end
+
+    local childUpdate = child.update
+    child.update = function(self, ...)
+      childUpdate(self, ...)
+      if self.gen1BetterMenusOpeningChild then
+        self.gen1BetterMenusOpeningChild = nil
+        return
+      end
+      if game.stack:top() ~= self
+          and not self.gen1BetterMenusReturnedToParent then
+        self.gen1BetterMenusReturnedToParent = true
+        game.stack:push(parent)
+      end
+    end
+    game.stack:push(child)
+  end
+
+  local function upstreamLiveBrowser(game, entries, kind)
+    local openedPalette = game.save.options.palette or ""
+    local openedMode = game.save.options.colors or "gbc"
+    local model = PaletteScreen.new(game)
+    local index = 1
+    local opened = kind == "mode" and openedMode or openedPalette
+    for i, entry in ipairs(entries) do
+      if entry.id == opened then index = i break end
+    end
+
+    local browser = {
+      game = game,
+      isOpaque = false,
+      holdsUIAnchors = true,
+      gen1BetterMenusSuppressLocationBanner = true,
+      index = index,
+    }
+
+    local function apply(entry)
+      if kind == "mode" then
+        model.set("")
+        model.setMode(entry.id)
+      else
+        model.set(entry.id)
+      end
+    end
+
+    local function restore()
+      if openedPalette ~= "" then
+        model.setMode(openedMode)
+        model.set(openedPalette)
+      else
+        model.set("")
+        model.setMode(openedMode)
+      end
+    end
+
+    apply(entries[index])
+
+    local function popupGeometry()
+      local label = PaletteScreen.sanitize(entries[browser.index].label)
+      local tiles = math.min(20, math.ceil(Font.width(label) / 8) + 2)
+      return label, math.floor((UI_TW - tiles) / 2), tiles
+    end
+
+    function browser:uiSize() return UI_W, UI_H end
+    function browser:sgbPalettes()
+      local _, tx, tiles = popupGeometry()
+      return { PaletteFX.zone(PaletteFX.pal(game.data, "MEWMON"),
+        tx, 0, tx + tiles - 1, 2) }
+    end
+    function browser:update()
+      local input = game.input
+      local n = #entries
+      if input:wasPressed("left") or input:wasPressed("up") then
+        self.index = self.index > 1 and self.index - 1 or n
+        apply(entries[self.index])
+      elseif input:wasPressed("right") or input:wasPressed("down") then
+        self.index = self.index < n and self.index + 1 or 1
+        apply(entries[self.index])
+      elseif input:wasPressed("a") or input:wasPressed("start") then
+        game.stack:pop()
+      elseif input:wasPressed("b") then
+        restore()
+        game.stack:pop()
+      end
+    end
+    function browser:draw()
+      local label, tx, tiles = popupGeometry()
+      Font.drawBox(tx, 0, tiles, 3)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(label, (tx + 1) * 8, 8)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    return browser
+  end
+
+  local function upstreamCategoryEntries(key)
+    local Palette = require("src.render.Palette")
+    if key == "mono" then
+      local entries = {}
+      for _, color in ipairs(Palette.MONO_COLOURS or {}) do
+        entries[#entries + 1] = {
+          label = color[1],
+          id = Palette.monoId(color[2], color[3], color[4]),
+        }
+      end
+      return entries, "palette"
+    elseif key == "og" then
+      local entries = {}
+      local wanted = { "ogred", "gbc", "redpp", "og",
+        "og_inv", "gbc_inv", "classic" }
+      for _, id in ipairs(wanted) do
+        entries[#entries + 1] = {
+          label = PaletteFX.modeLabel(id), id = id,
+        }
+      end
+      return entries, "mode"
+    end
+
+    local category = Palette.category(key)
+    local entries = {}
+    for _, entry in ipairs(category and category.palettes or {}) do
+      entries[#entries + 1] = { label = entry.name, id = entry.id }
+    end
+    return entries, "palette"
+  end
+
+  local function defaultPaletteState(game)
+    local rows = {}
+    local groups = {
+      { "FULL COLOR", "full" },
+      { "SINGLE COLOR", "single" },
+      { "GREYSCALE", "grey" },
+      { "MONOCHROME", "mono" },
+      { "OG", "og" },
+    }
+    for _, group in ipairs(groups) do
+      local label, key = group[1], group[2]
+      rows[#rows + 1] = {
+        label = label,
+        activate = function(g)
+          local entries, kind = upstreamCategoryEntries(key)
+          if #entries > 0 then
+            local parent = g.stack:top()
+            transitionToChild(g, parent,
+              upstreamLiveBrowser(g, entries, kind))
+          end
+        end,
+      }
+    end
+    return compactState(game, nil, rows)
+  end
+
+  local function menuPaletteBrowser(game, parent, choices)
+    local openedPalette = activeMod.options:get("palette")
+    local index = 1
+    for i, choice in ipairs(choices) do
+      if choice[2] == openedPalette then index = i break end
+    end
+
+    local browser = {
+      game = game,
+      isOpaque = false,
+      holdsUIAnchors = true,
+      index = index,
+    }
+
+    local function apply()
+      setOption(game, "palette", choices[browser.index][2])
+    end
+
+    apply()
+
+    function browser:uiSize() return UI_W, UI_H end
+    function browser:sgbPalettes()
+      local ptx, pty, ptw = parent:frameGeometry()
+      local label = Strings(choices[self.index][1])
+      local tw = math.min(ptw, math.max(8,
+        math.ceil((Font.width(label) + 16) / 8)))
+      local tx = ptx + math.floor((ptw - tw) / 2)
+      local ty = math.max(0, pty - 3)
+      local zones = parent:sgbPalettes() or {}
+      zones[#zones + 1] = PaletteFX.zone(effectiveMenuPalette(game),
+        tx, ty, tx + tw - 1, ty + 2)
+      return zones
+    end
+    function browser:update()
+      local input = game.input
+      local n = #choices
+      if input:wasPressed("left") or input:wasPressed("up") then
+        self.index = self.index > 1 and self.index - 1 or n
+        apply()
+      elseif input:wasPressed("right") or input:wasPressed("down") then
+        self.index = self.index < n and self.index + 1 or 1
+        apply()
+      elseif input:wasPressed("a") or input:wasPressed("start") then
+        game.stack:pop()
+      elseif input:wasPressed("b") then
+        setOption(game, "palette", openedPalette)
+        game.stack:pop()
+      end
+    end
+    function browser:draw()
+      parent:draw()
+      local ptx, pty, ptw = parent:frameGeometry()
+      local label = Strings(choices[self.index][1])
+      local tw = math.min(ptw, math.max(8,
+        math.ceil((Font.width(label) + 16) / 8)))
+      local tx = ptx + math.floor((ptw - tw) / 2)
+      local ty = math.max(0, pty - 3)
+      Font.drawBox(tx, ty, tw, 3)
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(label, (tx + 1) * 8, (ty + 1) * 8)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    return browser
+  end
+
+  local function groovyAvailable()
+    return mod.find("groovy_palette") ~= nil
+  end
+
+  local function groovyGameEntries()
+    local available = {}
+    for _, id in ipairs(PaletteFX.MODES or {}) do available[id] = true end
+    local entries = {}
+    for _, choice in ipairs(groovyMenuPalettes) do
+      local id = choice[2]
+      if available[id] then
+        entries[#entries + 1] = {
+          label = PaletteFX.MODE_LABELS[id] or choice[1],
+          id = id,
+        }
+      end
+    end
+    return entries
+  end
+
+  local function betterMenusState(game)
+    local rows = {
+      {
+        label = "UNLOCK MENU PALETTE",
+        value = function(g) return menuPaletteUnlocked(g) and "ON" or "OFF" end,
+        step = function(g)
+          if menuPaletteForcedUnlocked(g) then return true end
+          setOption(g, "override_og_menu_palette",
+            not activeMod.options:get("override_og_menu_palette"))
+          return true
+        end,
+      },
+    }
+    local function addGroup(label, choices)
+      rows[#rows + 1] = {
+        label = label,
+        activate = function(g)
+          if not menuPaletteUnlocked(g) then return end
+          local parent = g.stack:top()
+          g.stack:push(menuPaletteBrowser(g, parent, choices))
+        end,
+      }
+    end
+    if groovyAvailable() then addGroup("GROOVY", groovyMenuPalettes) end
+    addGroup("DEFAULT", defaultMenuPalettes)
+    addGroup("BetterMenus", betterMenusPalettes)
+    rows[#rows + 1] = { selectable = false, separator = true }
+    rows[#rows + 1] = {
+      label = "INVERSE",
+      value = function() return activeMod.options:get("inverse") and "ON" or "OFF" end,
+      step = function(g) setOption(g, "inverse", not activeMod.options:get("inverse")) end,
+    }
+    rows[#rows + 1] = {
+      label = "MODERN PC UI",
+      value = function() return activeMod.options:get("modern_pc_ui") and "ON" or "OFF" end,
+      step = function(g) setOption(g, "modern_pc_ui", not activeMod.options:get("modern_pc_ui")) end,
+    }
+    rows[#rows + 1] = {
+      label = "MODERN BAG UI",
+      value = function() return activeMod.options:get("modern_bag_ui") ~= false and "ON" or "OFF" end,
+      step = function(g) setOption(g, "modern_bag_ui", not (activeMod.options:get("modern_bag_ui") ~= false)) end,
+    }
+    rows[#rows + 1] = {
+      label = "MARQUEE TEXT",
+      value = function() return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF" end,
+      step = function(g) setOption(g, "marquee_text", not (activeMod.options:get("marquee_text") ~= false)) end,
+    }
+    rows[#rows + 1] = {
+      label = "POKéDEX INDICATOR",
+      value = function() return activeMod.options:get("pokedex_indicator") == "red" and "RED" or "DEFAULT" end,
+      step = function(g)
+        setOption(g, "pokedex_indicator",
+          activeMod.options:get("pokedex_indicator") == "red" and "default" or "red")
+      end,
+    }
+    return compactState(game, nil, rows, nil, true)
+  end
+
+  local function colorsState(game, reopenStart)
+    local rows = {}
+    if groovyAvailable() then
+      rows[#rows + 1] = {
+        label = "GROOVY",
+        activate = function(g)
+          local parent = g.stack:top()
+          local entries = groovyGameEntries()
+          if #entries > 0 then
+            transitionToChild(g, parent,
+              upstreamLiveBrowser(g, entries, "mode"))
+          end
+        end,
+      }
+    end
+    rows[#rows + 1] = {
+      label = "DEFAULT",
+      activate = function(g)
+        local parent = g.stack:top()
+        transitionToChild(g, parent, defaultPaletteState(g))
+      end,
+    }
+    rows[#rows + 1] = { selectable = false, separator = true }
+    rows[#rows + 1] = {
+      label = "BetterMenus",
+      activate = function(g) g.stack:push(betterMenusState(g)) end,
+    }
+    return compactState(game, nil, rows, reopenStart)
+  end
+
+  mod.hooks:wrap("ui.start_menu.items", function(next, game, items)
     items = next(game, items)
+
+    if groovyAvailable() then
+      for i = #items, 1, -1 do
+        if tostring(items[i].label) == "PALETTE" then table.remove(items, i) end
+      end
+    end
 
     -- Change QUIT to close the application, then add RESTART below it.
     for i, item in ipairs(items) do
@@ -2852,280 +3398,20 @@ return function(mod, menuColors)
     end
 
     local insertAt = #items + 1
-
     for i, item in ipairs(items) do
-      if tostring(item.label) == "SAVE" then
-        insertAt = i
-        break
-      end
+      if tostring(item.label) == "QUIT" then insertAt = i break end
     end
-
     table.insert(items, insertAt, {
-      label = Strings("BetterMenus"),
+      label = Strings("COLORS"),
       onSelect = function()
-  
-local paletteChoices = {
-	  "gameboy",
-	  "blackwhite",
-	  "ogred",
-	  "soulsilver",
-	  "heartgold",
-	  "firered",
-	  "leafgreen",
-	  "crystal",
-	  "emerald",
-	  "amiga_wb",
-	  "amiga_dp",
-	  "c64",
-	  "spectrum",
-	  "cga",
-	  "apple2",
-	  "pocket",
-	  "gblight",
-	  "virtualboy",
-	  "amber",
-	  "phosphor",
-	  "plasma",
-	  "rainbow",
-	  "acid",
-	  "fuchsia",
-	  "sunset",
-	  "ocean",
-	  "forest",
-	  "lava",
-	  "ice",
-	  "candy",
-	  "vapor",
-	  "neon",
-	  "toxic",
-	  "sepia",
-	  "noir",
-	  "cherry",
-	  "midnight",
-	  "gold",
-	  "mint",
-	  "grape",
-	}
-
-	local paletteNames = {
-	  gameboy = "GAME BOY",
-	  blackwhite = "BLACK AND WHITE",
-	  classic = "GAME BOY",
-	  og = "OG",
-	  ogred = "OG RED",
-	  redpp = "ADVANCED",
-	  gbc = "SGB",
-	  soulsilver = "SOULSILVER",
-	  heartgold = "HEARTGOLD",
-	  firered = "FIRERED",
-	  leafgreen = "LEAFGREEN",
-	  crystal = "CRYSTAL",
-	  emerald = "EMERALD",
-	  amiga_wb = "AMIGA WB",
-	  amiga_dp = "AMIGA DP",
-	  c64 = "C64",
-	  spectrum = "SPECTRUM",
-	  cga = "CGA",
-	  apple2 = "APPLE2",
-	  pocket = "POCKET",
-	  gblight = "GB LIGHT",
-	  virtualboy = "VIRTUAL BOY",
-	  amber = "AMBER",
-	  phosphor = "PHOSPHOR",
-	  plasma = "PLASMA",
-	  rainbow = "RAINBOW",
-	  acid = "ACID",
-	  fuchsia = "FUSCHIA",
-	  sunset = "SUNSET",
-	  ocean = "OCEAN",
-	  forest = "FOREST",
-	  lava = "LAVA",
-	  ice = "ICE",
-	  candy = "CANDY",
-	  vapor = "VAPOR",
-	  neon = "NEON",
-	  toxic = "TOXIC",
-	  sepia = "SEPIA",
-	  noir = "NOIR",
-	  cherry = "CHERRY",
-	  midnight = "MIDNIGHT",
-	  gold = "GOLD",
-	  mint = "MINT",
-	  grape = "GRAPE",
-	}
-
-	local function setOption(key, value)
-	  local manager = ManagerState.new(game)
-	  manager:setOption("gen1-better-menus", key, value)
-	end
-
-	local paletteState = {
-	  game = game,
-	  index = 1,
-	  scroll = 0,
-	  isOpaque = false,
-	}
-
-	local rows = {
-	  {
-		label = "MENU PALETTE",
-		value = function(g)
-		  if useStockOgMenuPalette(g) then
-			return lockedOgMenuPaletteLabel(g)
-		  end
-
-		  local current = activeMod.options:get("palette")
-		  return paletteNames[current] or current
-		end,
-		step = function(g, dir)
-		  if useStockOgMenuPalette(g) then
-			return true
-		  end
-
-		  local current = activeMod.options:get("palette")
-		  local index = 1
-
-		  for i, id in ipairs(paletteChoices) do
-			if id == current then
-			  index = i
-			  break
-			end
-		  end
-
-		  index = index + dir
-
-		  if index < 1 then
-			index = #paletteChoices
-		  elseif index > #paletteChoices then
-			index = 1
-		  end
-
-		  setOption("palette", paletteChoices[index])
-		  return true
-		end,
-	  },
-
-	  {
-		label = "INVERSE",
-		value = function()
-		  return activeMod.options:get("inverse") and "ON" or "OFF"
-		end,
-		step = function()
-		  setOption("inverse", not activeMod.options:get("inverse"))
-		  return true
-		end,
-	  },
-	  
-	  {
-	  label = "OVERRIDE OG MENU PALETTE",
-	  value = function()
-		return activeMod.options:get("override_og_menu_palette") and "ON" or "OFF"
-	  end,
-	  step = function()
-		setOption(
-		  "override_og_menu_palette",
-		  not activeMod.options:get("override_og_menu_palette")
-		)
-		return true
-	  end,
-	  },
-
-	  {
-		label = "MODERN PC UI",
-		value = function()
-		  return activeMod.options:get("modern_pc_ui") == true and "ON" or "OFF"
-		end,
-		step = function()
-		  setOption("modern_pc_ui", activeMod.options:get("modern_pc_ui") ~= true)
-		  return true
-		end,
-	  },
-
-	  {
-		label = "MODERN BAG UI",
-		value = function()
-		  return activeMod.options:get("modern_bag_ui") ~= false and "ON" or "OFF"
-		end,
-		step = function()
-		  setOption("modern_bag_ui",
-		    not (activeMod.options:get("modern_bag_ui") ~= false))
-		  return true
-		end,
-	  },
-
-	  {
-		label = "MARQUEE TEXT",
-		value = function()
-		  return activeMod.options:get("marquee_text") ~= false and "ON" or "OFF"
-		end,
-		step = function()
-		  setOption("marquee_text", not (activeMod.options:get("marquee_text") ~= false))
-		  return true
-		end,
-	  },
-
-	  {
-		label = "POKéDEX INDICATOR",
-		value = function()
-		  return activeMod.options:get("pokedex_indicator") == "red"
-		    and "RED" or "DEFAULT"
-		end,
-		step = function()
-		  local current = activeMod.options:get("pokedex_indicator")
-		  setOption("pokedex_indicator", current == "red" and "default" or "red")
-		  return true
-		end,
-	  },
-	}
-
-	function paletteState:uiSize()
-	  return UI_W, UI_H
-	end
-
-	function paletteState:sgbPalettes()
-	  return wholeWide()
-	end
-
-	function paletteState:draw()
-	  OptionRows.draw(game, rows, self.index, self.scroll, "B:DONE")
-	end
-
-	function paletteState:update()
-	  local input = game.input
-
-	  if input:wasPressed("up") then
-		self.index = self.index > 1 and self.index - 1 or #rows
-
-	  elseif input:wasPressed("down") then
-		self.index = self.index < #rows and self.index + 1 or 1
-
-	  elseif input:wasPressed("left") then
-		rows[self.index].step(game, -1)
-
-	  elseif input:wasPressed("right") then
-		rows[self.index].step(game, 1)
-
-	  elseif input:wasPressed("a") then
-		rows[self.index].step(game, 1)
-
-	  elseif input:wasPressed("b") then
-		game.stack:pop()
-		Screens.push(game, "StartMenu")
-	  end
-
-	  self.scroll = OptionRows.clampScroll(
-		self.index,
-		self.scroll,
-		#rows
-	  )
-	end
-
-	game.stack:push(paletteState)
-		end,
-	  })
+        game.stack:push(colorsState(game, function()
+          Screens.push(game, "StartMenu")
+        end))
+      end,
+    })
 
 	  return items
-	end)
+	end, 7)
 
   installModOptionsMarkerCompatibility()
   installOptionsLayout()
