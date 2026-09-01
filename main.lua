@@ -2326,34 +2326,6 @@ end
       end
     end
 
-    -- Only the visible right-hand party HP bars.
-    local party = game.save and game.save.party or {}
-
-    for i, mon in ipairs(party) do
-      local col = math.floor((i - 1) / 3)
-
-      if col == 1 then
-        local row = (i - 1) % 3
-        local x = 8 + col * 144
-        local y = 8 + row * 40
-
-        local bar = PaletteFX.pal(
-          game.data,
-          PaletteFX.barPalName(mon.hp, mon.stats.hp)
-        )
-
-        if bar then
-          zones[#zones + 1] = {
-            colors = bar,
-            x = x + 5 * 8,
-            y = y + 19,
-            w = 4 * 8,
-            h = 2,
-          }
-        end
-      end
-    end
-
     return zones
   end
 end
@@ -3883,7 +3855,7 @@ end
       else
         love.graphics.setShader()
       end
-      love.graphics.draw(top.sprite, 8 + pw, py, 0, -1, 1)
+      love.graphics.draw(top.sprite, 72 + 8 + pw, py, 0, -1, 1)
       love.graphics.pop()
 
       love.graphics.setShader(previousShader)
