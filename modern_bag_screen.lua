@@ -1329,7 +1329,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
 
     local visibleRows = math.min(layout.rows,
       math.max(0, #menu.items - menu.scroll))
-    local stackH = (visibleRows - 1) * ROW_H + 12
+    local stackH = (layout.rows - 1) * ROW_H + 12
     local stackY = layout.listY + math.floor((layout.listH - stackH) / 2)
 
     for row = 1, visibleRows do
