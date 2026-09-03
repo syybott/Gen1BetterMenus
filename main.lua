@@ -34,6 +34,7 @@ local BattleState = require("src.battle.BattleState")
 local QuarantineReport = require("src.ui.QuarantineReport")
 local TitleState = require("src.ui.TitleState")
 local OakSpeech = require("src.ui.OakSpeech")
+local OverworldState = require("src.world.OverworldController")
 local Runtime = require("src.mods.Runtime")
 local Bag = require("src.inventory.Bag")
 
@@ -1295,9 +1296,11 @@ local function installMenuLayout()
       for _, item in ipairs(items) do
         widest = math.max(widest, #(Font.split(item.label or "")))
       end
+      local rowStep = opts.rowStep or 2
       opts.tx = 0
       opts.tw = widest + 3
-      opts.th = #items * (opts.rowStep or 2) + 2
+      opts.th = (#items - 1) * rowStep + 3
+      opts.itemY = 1
     end
     local titleMenu = game and game.stack
       and getmetatable(game.stack:top()) == TitleState
@@ -1726,6 +1729,20 @@ end
 
 local function installDialogueLayout()
   local originalNew = TextBox.new
+  local originalOpenPC = OverworldState.openPC
+  local openingPC = 0
+
+  -- Scope the skipped startup TextBox to the engine's existing openPC flow.
+  -- Every caller receives the same behavior, including a physical Pokemon
+  -- Center PC and mods that invoke openPC from the Start menu.
+  OverworldState.openPC = function(self, ...)
+    openingPC = openingPC + 1
+    local ok, result = pcall(originalOpenPC, self, ...)
+    openingPC = openingPC - 1
+    if not ok then error(result, 0) end
+    return result
+  end
+
   local function widenSavePanel(game, parent)
     if parent and parent.holdsUIAnchors and parent.openPrompt
         and parent.delay ~= nil and not parent.gen1BetterMenusSavePanel then
@@ -1764,6 +1781,16 @@ local function installDialogueLayout()
 
   local originalPush = StateStack.push
   StateStack.push = function(stack, state, ...)
+    -- The Pokemon Center PC builds its menu before pushing the stock
+    -- "turned on the PC" TextBox. Run that box's existing completion
+    -- callback immediately so the already-built menu opens directly.
+    if state and state.gen1BetterMenusSkipCenterPCTurnOn then
+      local onDone = state.onDone
+      state.onDone = nil
+      if onDone then onDone() end
+      return
+    end
+
     -- The SAVE panel waits 30 frames before creating its TextBox. Widen it
     -- as it enters the stack so the retained START menu never flashes first.
     widenSavePanel(Game, state)
@@ -1772,6 +1799,14 @@ local function installDialogueLayout()
 
   TextBox.new = function(game, text, onDone, opts)
     local self = originalNew(game, text, onDone, opts)
+    local centerPCTurnOnText = game and game.data and game.data.text
+      and game.data.text._TurnedOnPC1Text
+    if openingPC > 0
+        and ((centerPCTurnOnText ~= nil and text == centerPCTurnOnText)
+        or (centerPCTurnOnText == nil
+          and text == "{PLAYER} turned on\nthe PC.")) then
+      self.gen1BetterMenusSkipCenterPCTurnOn = true
+    end
     local parent = game and game.stack and game.stack:top()
     widenSavePanel(game, parent)
     local inWideBattle, wideBattleState = false, nil
@@ -2107,7 +2142,7 @@ local function installSupportingScreens()
   local function partySlot(i)
     local col = math.floor((i - 1) / 3)
     local row = (i - 1) % 3
-    return 8 + col * 144, 8 + row * 40
+    return 8 + col * 144, 10 + row * 40
   end
 
   local function addPaletteZoneOutside(zones, colors, rect, cutout)
@@ -2144,6 +2179,114 @@ local function installSupportingScreens()
     add(x1, iy2, rect.w, y2 - iy2)
     add(x1, iy1, ix1 - x1, iy2 - iy1)
     add(ix2, iy1, x2 - ix2, iy2 - iy1)
+  end
+
+  local inkShader
+  local function shaderForInk()
+    if inkShader == nil then
+      if not love.graphics.newShader then
+        inkShader = false
+      else
+        local ok, shader = pcall(love.graphics.newShader, [[
+          vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+            vec4 pixel = Texel(tex, tc);
+            return vec4(color.rgb, pixel.a * color.a);
+          }
+        ]])
+        inkShader = ok and shader or false
+      end
+    end
+    return inkShader or nil
+  end
+
+  local function paneBackgroundColor(game)
+    local menuPal = effectiveMenuPalette(game)
+    if menuPal and menuPal[1] then
+      local c = PaletteFX.effectiveColors(menuPal) or menuPal
+      return { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255, 1 }
+    end
+    return { 1, 1, 1, 1 }
+  end
+
+  local function getGenderModApi(game)
+    local handle = (activeMod and activeMod.find and activeMod.find("gender_mod"))
+      or (game and game.mods and game.mods.find and game.mods:find("gender_mod"))
+    if handle and handle.exports then return handle.exports end
+    local exports = (game and game.mods and game.mods.exports)
+      or (Runtime and Runtime.mods and Runtime.mods.exports)
+    return exports and exports["gender_mod"]
+  end
+
+  local function drawPartyGender(game, mon, x, y, menu)
+    local api = getGenderModApi(game)
+    if not api or type(api.genderOf) ~= "function" then return end
+    local okGender, gender = pcall(api.genderOf, mon)
+    if not okGender or not gender then return end
+
+    local state = api.state and api.state(gender) or (type(gender) == "table" and gender.state or gender)
+    local color = { 0, 0, 0, 1 }
+    if type(api.palette) == "function" then
+      local okPalette, exported = pcall(api.palette, gender)
+      if okPalette and type(exported) == "table" then color = exported end
+    elseif state == "M" then
+      color = { 32 / 255, 104 / 255, 224 / 255, 1 }
+    elseif state == "F" then
+      color = { 248 / 255, 72 / 255, 152 / 255, 1 }
+    end
+
+    local bg = paneBackgroundColor(game)
+    x, y = math.floor(x), math.floor(y)
+
+    love.graphics.setColor(bg[1], bg[2], bg[3], 1)
+    love.graphics.rectangle("fill", x, y, 8, 8)
+
+    local okSymbol, symbol = pcall(api.symbol or function(g)
+      return g == "M" and "♂" or g == "F" and "♀" or "⚲"
+    end, gender)
+    if okSymbol and type(symbol) == "string" and symbol ~= "" then
+      love.graphics.push("all")
+      local shader = shaderForInk()
+      if shader then love.graphics.setShader(shader) end
+      love.graphics.setColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+      Font.draw(symbol, x, y)
+      love.graphics.pop()
+    end
+
+    local top = game and game.stack and game.stack:top()
+    local skipTrueColor = false
+
+    if top and menu and top ~= menu then
+      local topW = top.uiWidth or 160
+      local topH = top.uiHeight or 144
+      if x < topW and y < topH then
+        skipTrueColor = true
+      end
+    end
+
+    if menu and menu.submenu then
+      local n = #(menu.subItems or {})
+      local smX = (UI_TW - 11) * 8
+      local smY = (17 - n * 2 - 1) * 8
+      local smW = 11 * 8
+      local smH = (n * 2 + 1) * 8
+      if x + 8 > smX and x < smX + smW and y + 8 > smY and y < smY + smH then
+        skipTrueColor = true
+      end
+    end
+
+    if not skipTrueColor then
+      local okP, PaletteFX = pcall(require, "src.render.PaletteFX")
+      if okP and PaletteFX and PaletteFX.markTrueColor then
+        PaletteFX.markTrueColor(x, y, 8, 8)
+      end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+
+  local function drawSmallLevelL(x, y)
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", x, y + 2, 2, 5)
+    love.graphics.rectangle("fill", x + 2, y + 6, 2, 1)
   end
 
   makeWideState(PartyMenu)
@@ -2184,21 +2327,39 @@ local function installSupportingScreens()
     local HudTiles = require("src.render.HudTiles")
     local barZoned = PaletteFX.shader() ~= nil
       and PaletteFX.pal(self.game.data, "GREENBAR") ~= nil
-    if #party == 0 then Font.draw(Strings("No POKéMON!"), 16, 64) end
+    if #party == 0 then Font.draw(Strings("No POKéMON!"), 16, 66) end
 
     for i, mon in ipairs(party) do
       local x, y = partySlot(i)
       local def = self.game.data.pokemon[mon.species]
       love.graphics.setColor(1, 1, 1, 1)
-      PartyMenu.drawIcon(self.game, mon, x + 8, y,
+      PartyMenu.drawIcon(self.game, mon, x + 7, y,
                          i == self.index, self.blink or 0)
       love.graphics.setColor(0, 0, 0, 1)
-      Font.draw(truncate(mon.nickname or def.name, 10), x + 24, y)
-      if mon.level < 100 then
-        HudTiles.tile(0x6E, x + 112, y)
-        Font.draw(tostring(mon.level), x + 120, y)
+
+      local rawName = mon.nickname or (def and def.name) or tostring(mon.species or "")
+      local gApi = getGenderModApi(self.game)
+      local cleanName = rawName
+      if gApi and gApi.stripEmbedded then
+        cleanName = gApi.stripEmbedded(rawName)
+      elseif gApi and gApi.Gender and gApi.Gender.stripEmbedded then
+        cleanName = gApi.Gender.stripEmbedded(rawName)
       else
-        Font.draw(tostring(mon.level), x + 112, y)
+        cleanName = cleanName:gsub("♂", ""):gsub("♀", "")
+      end
+      local nameText = truncate(cleanName, 10)
+      Font.draw(nameText, x + 24, y)
+      drawPartyGender(self.game, mon, x + 26 + Font.width(nameText), y, self)
+      love.graphics.setColor(0, 0, 0, 1)
+
+      local showLevel = true
+      local okLevel, LevelDisplay = pcall(require, "src.ui.LevelDisplay")
+      if okLevel and LevelDisplay and LevelDisplay.visible then
+        showLevel = LevelDisplay.visible(mon, "party", self.game)
+      end
+      if showLevel then
+        drawSmallLevelL(x + 24, y + 8)
+        Font.draw(tostring(mon.level), x + 30, y + 8)
       end
 
       if self.tmhm or self.evoStone then
@@ -2238,13 +2399,18 @@ local function installSupportingScreens()
     end
 
     love.graphics.setColor(0, 0, 0, 1)
+    local rawBottomMsg = tostring(self:bottomMessage() or "")
+    local cleanBottomMsg = rawBottomMsg:gsub("%.+$", ""):gsub("%.(\n)", "%1")
     local flat = {}
-    for _, page in ipairs(TextBox.paginate(self:bottomMessage(), 34)) do
-      for _, line in ipairs(page) do flat[#flat + 1] = line end
+    for _, page in ipairs(TextBox.paginate(cleanBottomMsg, 34)) do
+      for _, line in ipairs(page) do
+        flat[#flat + 1] = tostring(line or ""):gsub("%.+$", "")
+      end
     end
     local y = #flat > 1 and 112 or 128
     for i = math.max(1, #flat - 1), #flat do
-      Font.draw(flat[i], 16, y)
+      local line = tostring(flat[i] or ""):gsub("%.+$", "")
+      Font.draw(line, 16, y)
       y = y + 16
     end
 
@@ -2302,6 +2468,10 @@ SummaryMenu.draw = function(self)
   self.sprite = nil
   originalSummaryDraw(self)
   self.sprite = sprite
+
+  if self.page == 1 and self.mon then
+    drawPartyGender(self.game, self.mon, 104, 16, self)
+  end
 end
   
   makeWideState(SummaryMenu)
@@ -2526,35 +2696,57 @@ return function(mod, menuColors)
   activeMod = mod
 
   local qolCompatGame
-  local QOL_BATTLE_COMPAT_INITIALIZED = "qol_battle_compat_initialized"
   local enforcingQolBattleGate = false
 
   local function qolBattleGateReason(game)
-    local options = game and game.save and game.save.options
-    if not options or options.battleLayout ~= "wide"
-        or not mod.find("quality_of_life") then return nil end
-    if options.battleHud == "extended" then return "EXTENDED" end
-    if modernBattleUIMode() == "on" then return "MODERN UI" end
+    return modernBattleUIMode() == "on" and "MODERN BATTLE UI" or nil
+  end
+
+  local function optionValue(loader, modId, key)
+    local stored = loader and loader.modOptions and loader.modOptions[modId]
+    if stored and stored[key] ~= nil then return stored[key] end
+    for _, row in ipairs(loader and loader.optionSchemas
+        and loader.optionSchemas[modId] or {}) do
+      if row.key == key then return row.default end
+    end
     return nil
   end
 
-  local function enforceQolBattleGate(game)
-    local reason = qolBattleGateReason(game)
-    if enforcingQolBattleGate or not reason then return false end
-    enforcingQolBattleGate = true
-    local manager = ManagerState.new(game)
-    if reason == "EXTENDED" and modernBattleUIMode() ~= "on" then
-      manager:setOption("gen1-better-menus", "modern_battle_ui", "on")
+  local function persistGameOptions(game)
+    if game.writeOptions then
+      game:writeOptions()
+    elseif game.persistOptions then
+      game:persistOptions()
     end
+  end
+
+  local function enforceQolBattleGate(game)
+    if enforcingQolBattleGate or not game
+        or modernBattleUIMode() ~= "on" then return false end
+    enforcingQolBattleGate = true
+
+    local options = game.save and game.save.options
+    local baseOptionsChanged = false
+    if options then
+      if options.battleLayout ~= "wide" then
+        options.battleLayout = "wide"
+        baseOptionsChanged = true
+      end
+      if options.battleHud ~= "extended" then
+        options.battleHud = "extended"
+        baseOptionsChanged = true
+      end
+    end
+    if baseOptionsChanged then persistGameOptions(game) end
+
+    local manager = ManagerState.new(game)
     local loader = game.mods
-    local values = loader and loader.modOptions
-      and loader.modOptions.quality_of_life
-    if type(values) == "table" then
-      if values.qol_caught_indicator ~= nil
-          and values.qol_caught_indicator ~= "off" then
+    if mod.find("quality_of_life") then
+      if optionValue(loader, "quality_of_life", "qol_caught_indicator")
+          ~= "off" then
         manager:setOption("quality_of_life", "qol_caught_indicator", "off")
       end
-      if values.qol_exp_bar ~= nil and values.qol_exp_bar ~= "off" then
+      if optionValue(loader, "quality_of_life", "qol_exp_bar") ~= "off" then
         manager:setOption("quality_of_life", "qol_exp_bar", "off")
       end
     end
@@ -2564,34 +2756,18 @@ return function(mod, menuColors)
 
   local function initializeBattleUiCompatibility(game)
     if not game then return end
-    if mod.options:get(QOL_BATTLE_COMPAT_INITIALIZED) ~= true then
-      local manager = ManagerState.new(game)
-      manager:setOption("gen1-better-menus",
-        QOL_BATTLE_COMPAT_INITIALIZED, true)
-    end
     enforceQolBattleGate(game)
   end
 
   mod.events:on("game.ready", function(event)
     qolCompatGame = event and event.game
     activeGame = qolCompatGame
-    local savedMode = mod.options:get("modern_battle_ui")
-    if type(savedMode) == "boolean" and qolCompatGame then
-      local manager = ManagerState.new(qolCompatGame)
-      manager:setOption("gen1-better-menus", "modern_battle_ui",
-        savedMode and "on" or "off")
-    end
     initializeBattleUiCompatibility(qolCompatGame)
   end)
   mod.events:on("mod.options_changed", function(event)
     if event and event.mod == "gen1-better-menus"
         and event.key == "modern_battle_ui" then
-      if qolBattleGateReason(qolCompatGame) then
-        enforceQolBattleGate(qolCompatGame)
-      elseif modernBattleUIMode() ~= "on" and qolCompatGame then
-        local manager = ManagerState.new(qolCompatGame)
-        manager:setOption("gen1-better-menus", "pokedex_indicator", "off")
-      end
+      enforceQolBattleGate(qolCompatGame)
     end
     if event and event.mod == "quality_of_life"
         and (event.key == "qol_caught_indicator"
@@ -2632,22 +2808,34 @@ return function(mod, menuColors)
         row.value = function(g)
           local control = ManagerState.gen1BetterMenusQolBattleControl
           local reason = control and control.reason(g)
-          return reason and "OFF (MODERN UI)" or value(g)
+          return reason and "OFF (MODERN BATTLE UI)" or value(g)
         end
       end
     end
 
     screen.update = function(self, ...)
+      local input = self.game and self.game.input
+      if input and (input:wasPressed("up") or input:wasPressed("down")) then
+        return update(self, ...)
+      end
       local control = ManagerState.gen1BetterMenusQolBattleControl
       local reason = control and control.reason(self.game)
       local row = self.rows and self.rows[self.index]
       local gated = reason and row
         and (row.key == "qol_caught_indicator" or row.key == "qol_exp_bar")
-      local key = gated and row.key or nil
-      if gated then row.key = nil end
       if reason then control.enforce(self.game) end
+      if gated and input and (input:wasPressed("a")
+          or input:wasPressed("left") or input:wasPressed("right")) then
+        self.game.stack:push(TextBox.new(self.game,
+          "To use the QOL XP Bar or\n" ..
+          "Pokedex Indicator, please disable\f" ..
+          "BetterMenus Modern Battle UI.\n" ..
+          "Modern Battle UI already includes\f" ..
+          "an XP bar, Pokedex indicator, and\n" ..
+          "extended UI support."))
+        return true
+      end
       local result = update(self, ...)
-      if gated then row.key = key end
       if reason then control.enforce(self.game) end
       return result
     end
@@ -2715,27 +2903,6 @@ return function(mod, menuColors)
               if control and control.forcedUnlocked(game) then return true end
               return normalStep and normalStep(game, dir) or false
             end
-          elseif row.id == "modern_battle_ui" then
-            local normalValue, normalStep = row.value, row.step
-            row.value = function(game)
-              game = game or self.game
-              local battleControl =
-                ManagerState.gen1BetterMenusQolBattleControl
-              if battleControl and battleControl.reason(game) == "EXTENDED" then
-                return "ON (EXTENDED)"
-              end
-              return normalValue and normalValue(game) or "ON"
-            end
-            row.step = function(game, dir)
-              game = game or self.game
-              local battleControl =
-                ManagerState.gen1BetterMenusQolBattleControl
-              if battleControl and battleControl.reason(game) == "EXTENDED" then
-                battleControl.enforce(game)
-                return true
-              end
-              return normalStep and normalStep(game, dir) or false
-            end
           end
         end
       end
@@ -2772,7 +2939,8 @@ return function(mod, menuColors)
   end
 
   local okScreen, screen = pcall(factory, mod, genderExports, compatibility,
-    effectiveMenuPalette, useStockOgMenuPalette)
+    effectiveMenuPalette, useStockOgMenuPalette, effectivePaperPalette,
+    rawMenuPaletteCopy)
   if not okScreen or type(screen) ~= "table"
       or type(screen.new) ~= "function" then
     mod.log:error("PC screen factory failed: %s", tostring(screen))
@@ -2796,6 +2964,30 @@ return function(mod, menuColors)
     mod.content.screens:override("BoxMenu", boxMenuWrapper)
   else
     mod.content.screens:register("BoxMenu", boxMenuWrapper)
+  end
+
+  local originalPartyMenu = mod.content.screens:get("PartyMenu")
+  local partyMenuWrapper = {
+    new = function(game, ...)
+      return PartyMenu.new(game, ...)
+    end
+  }
+  if originalPartyMenu then
+    mod.content.screens:override("PartyMenu", partyMenuWrapper)
+  else
+    mod.content.screens:register("PartyMenu", partyMenuWrapper)
+  end
+
+  local originalSummaryMenu = mod.content.screens:get("SummaryMenu")
+  local summaryMenuWrapper = {
+    new = function(game, ...)
+      return SummaryMenu.new(game, ...)
+    end
+  }
+  if originalSummaryMenu then
+    mod.content.screens:override("SummaryMenu", summaryMenuWrapper)
+  else
+    mod.content.screens:register("SummaryMenu", summaryMenuWrapper)
   end
 
   -- Modern Bag UI is vendored under BetterMenus-owned filenames. Preserve
@@ -3506,20 +3698,12 @@ return function(mod, menuColors)
     }
     rows[#rows + 1] = {
       label = "Modern Battle UI",
-      value = function(g)
-        return qolBattleGateReason(g) == "EXTENDED"
-          and "ON (EXTENDED)" or modernBattleUIMode():upper()
-      end,
-      widthValues = { "ON", "OFF", "MOD", "ON (EXTENDED)" },
+      value = function() return modernBattleUIMode():upper() end,
+      widthValues = { "ON", "OFF", "MOD" },
       step = function(g)
-        if qolBattleGateReason(g) == "EXTENDED" then
-          enforceQolBattleGate(g)
-          return
-        end
         local mode = modernBattleUIMode()
         mode = mode == "on" and "off" or mode == "off" and "mod" or "on"
         setOption(g, "modern_battle_ui", mode)
-        if mode ~= "on" then setOption(g, "pokedex_indicator", "off") end
       end,
       description = function()
         local mode = modernBattleUIMode()
@@ -3541,17 +3725,12 @@ return function(mod, menuColors)
     rows[#rows + 1] = {
       label = "Pokédex Indicator",
       value = function()
-        if not modernBattleUIEnabled() then return "OFF" end
         local value = activeMod.options:get("pokedex_indicator")
         if value == "off" then return "OFF" end
         return value == "red" and "RED" or "DEFAULT"
       end,
       widthValues = { "OFF", "DEFAULT", "RED" },
       step = function(g)
-        if not modernBattleUIEnabled() then
-          setOption(g, "pokedex_indicator", "off")
-          return
-        end
         local value = activeMod.options:get("pokedex_indicator")
         setOption(g, "pokedex_indicator", value == "off" and "default"
           or value == "default" and "red" or "off")
@@ -3855,7 +4034,7 @@ end
       else
         love.graphics.setShader()
       end
-      love.graphics.draw(top.sprite, 72 + 8 + pw, py, 0, -1, 1)
+      love.graphics.draw(top.sprite, 8 + pw, py, 0, -1, 1)
       love.graphics.pop()
 
       love.graphics.setShader(previousShader)

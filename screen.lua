@@ -2,27 +2,30 @@
 -- Pokémon games. The engine's compact list-shaped Gen 1 saves stay intact;
 -- this screen is only a controller and presentation layer over those lists.
 return function(mod, genderExports, compatibility, menuColors,
-    useStockOgMenuPalette)
+    useStockOgMenuPalette, menuPaper, rawPaletteCopy)
   compatibility = compatibility or {}
   local Assets = require("src.render.Assets")
   local Boxes = require("src.pokemon.Boxes")
   local Font = require("src.render.Font")
+  local Growth = require("src.pokemon.Growth")
+  local HudTiles = require("src.render.HudTiles")
   local Logger = require("src.core.Logger")
   local PaletteFX = require("src.render.PaletteFX")
   local Party = require("src.pokemon.Party")
   local PartyMenu = require("src.ui.PartyMenu")
   local Renderer = require("src.render.Renderer")
   local Runtime = require("src.mods.Runtime")
-  local Screens = require("src.ui.Screens")
   local Sound = require("src.core.Sound")
   local Sprites = require("src.pokemon.Sprites")
+  local Status = require("src.battle.Status")
   local Stats = require("src.pokemon.Stats")
   local Strings = require("src.core.Strings")
   local TextBox = require("src.render.TextBox")
   local Theme = require("src.ui.Theme")
+  local TypeChart = require("src.battle.TypeChart")
 
   local SCREEN_H = 144
-  local HEADER_H = 16
+  local HEADER_H = 14
   local FOOTER_Y = 135
   local WHITE = 1
   local LIGHT = 170 / 255
@@ -30,16 +33,16 @@ return function(mod, genderExports, compatibility, menuColors,
   local BLACK = 0
 
   local TYPE_BASE = {
-    NORMAL = { 144, 152, 162 }, FIGHTING = { 206, 63, 107 },
-    FLYING = { 143, 168, 222 }, POISON = { 171, 106, 200 },
-    GROUND = { 217, 119, 70 }, ROCK = { 201, 182, 139 },
-    BUG = { 144, 192, 44 }, GHOST = { 82, 105, 173 },
-    FIRE = { 254, 156, 85 }, WATER = { 77, 144, 214 },
-    GRASS = { 101, 188, 94 }, ELECTRIC = { 244, 210, 59 },
-    PSYCHIC = { 249, 113, 119 }, PSYCHIC_TYPE = { 249, 113, 119 },
-    ICE = { 115, 206, 191 }, DRAGON = { 9, 109, 195 },
-    DARK = { 91, 82, 101 }, FAIRY = { 236, 144, 231 },
-    STEEL = { 91, 142, 161 },
+    NORMAL = { 184, 185, 171 }, FIGHTING = { 174, 91, 75 },
+    FLYING = { 117, 148, 202 }, POISON = { 161, 91, 151 },
+    GROUND = { 207, 178, 98 }, ROCK = { 183, 168, 109 },
+    BUG = { 175, 186, 66 }, GHOST = { 101, 104, 173 },
+    FIRE = { 233, 84, 54 }, WATER = { 99, 145, 205 },
+    GRASS = { 141, 194, 102 }, ELECTRIC = { 247, 205, 85 },
+    PSYCHIC = { 236, 99, 145 }, PSYCHIC_TYPE = { 236, 99, 145 },
+    ICE = { 147, 213, 245 }, DRAGON = { 99, 102, 173 },
+    DARK = { 114, 86, 74 }, FAIRY = { 218, 176, 212 },
+    STEEL = { 164, 163, 179 },
   }
 
   local function typeRamp(base)
@@ -64,6 +67,64 @@ return function(mod, genderExports, compatibility, menuColors,
 
   local inkShader -- false if the host has no shader support
   local fittedHgssIcons = {}
+  local battleSpriteCache = setmetatable({}, { __mode = "k" })
+  local rawTypePalettes = setmetatable({}, { __mode = "k" })
+  local xpMarkImage
+
+  local TYPE_ABBREVIATIONS = {
+    NORMAL = "NRM", FIRE = "FIR", FLYING = "FLY", PSYCHIC = "PSY",
+    PSYCHIC_TYPE = "PSY", WATER = "WTR", GROUND = "GRD",
+    STEEL = "STL", POISON = "PSN", DRAGON = "DRA", FIGHTING = "FGT",
+    DARK = "DRK", ICE = "ICE", ELECTRIC = "ELE", ROCK = "RCK",
+    GRASS = "GRS", BUG = "BUG", GHOST = "GHO", FAIRY = "FAY",
+  }
+
+  local TINY_GLYPHS = {
+    A = { "010", "101", "111", "101", "101" },
+    B = { "110", "101", "110", "101", "110" },
+    C = { "011", "100", "100", "100", "011" },
+    D = { "110", "101", "101", "101", "110" },
+    E = { "111", "100", "110", "100", "111" },
+    F = { "111", "100", "110", "100", "100" },
+    G = { "011", "100", "101", "101", "011" },
+    H = { "101", "101", "111", "101", "101" },
+    I = { "111", "010", "010", "010", "111" },
+    J = { "001", "001", "001", "101", "010" },
+    K = { "101", "101", "110", "101", "101" },
+    L = { "100", "100", "100", "100", "111" },
+    M = { "101", "111", "111", "101", "101" },
+    N = { "101", "111", "111", "111", "101" },
+    O = { "010", "101", "101", "101", "010" },
+    P = { "110", "101", "110", "100", "100" },
+    Q = { "010", "101", "101", "111", "011" },
+    R = { "110", "101", "110", "101", "101" },
+    S = { "011", "100", "010", "001", "110" },
+    T = { "111", "010", "010", "010", "010" },
+    U = { "101", "101", "101", "101", "111" },
+    V = { "101", "101", "101", "101", "010" },
+    W = { "101", "101", "111", "111", "101" },
+    X = { "101", "101", "010", "101", "101" },
+    Y = { "101", "101", "010", "010", "010" },
+    Z = { "111", "001", "010", "100", "111" },
+    ["0"] = { "111", "101", "101", "101", "111" },
+    ["1"] = { "010", "110", "010", "010", "111" },
+    ["2"] = { "111", "001", "111", "100", "111" },
+    ["3"] = { "111", "001", "111", "001", "111" },
+    ["4"] = { "101", "101", "111", "001", "001" },
+    ["5"] = { "111", "100", "111", "001", "111" },
+    ["6"] = { "111", "100", "111", "101", "111" },
+    ["7"] = { "111", "001", "010", "010", "010" },
+    ["8"] = { "111", "101", "111", "101", "111" },
+    ["9"] = { "111", "101", "111", "001", "111" },
+    ["-"] = { "000", "000", "111", "000", "000" },
+    ["/"] = { "001", "001", "010", "100", "100" },
+    ["%"] = { "101", "001", "010", "100", "101" },
+    ["("] = { "011", "100", "100", "100", "011" },
+    [")"] = { "110", "001", "001", "001", "110" },
+    [":"] = { "000", "010", "000", "010", "000" },
+    ["'"] = { "010", "010", "000", "000", "000" },
+    [" "] = { "000", "000", "000", "000", "000" },
+  }
 
   local function iconAnimationEnabled(screen)
     local loader = screen and screen.game and screen.game.mods
@@ -184,6 +245,75 @@ return function(mod, genderExports, compatibility, menuColors,
     end
   end
 
+  -- Match Modern Bag's symmetric hard-pixel rounded geometry. Three stacked
+  -- rectangles produce identical two-pixel steps at all four corners.
+  local function pixelRoundFill(x, y, width, height)
+    x, y = math.floor(x), math.floor(y)
+    width, height = math.floor(width), math.floor(height)
+    love.graphics.rectangle("fill", x + 2, y, width - 4, height)
+    love.graphics.rectangle("fill", x + 1, y + 1, width - 2, height - 2)
+    love.graphics.rectangle("fill", x, y + 2, width, height - 4)
+  end
+
+  local SELECTOR_ON_SECONDS = 0.700
+  local SELECTOR_OFF_SECONDS = 0.250
+  local SELECTOR_PERIOD_SECONDS = SELECTOR_ON_SECONDS + SELECTOR_OFF_SECONDS
+
+  local function selectorVisible(screen)
+    local elapsed = tonumber(screen and screen.selectorBlinkElapsed) or 0
+    return elapsed % SELECTOR_PERIOD_SECONDS < SELECTOR_ON_SECONDS
+  end
+
+  -- One-pixel rounded outline matching pixelRoundFill(rect) minus
+  -- pixelRoundFill(rect inset by one). The stepped corner pixels are kept as
+  -- separate runs so only the selector ink, never the slot interior, is
+  -- protected from menu-palette conversion.
+  local function selectorOutlineRuns(rect)
+    local x, y = math.floor(rect.x), math.floor(rect.y)
+    local w, h = math.floor(rect.w), math.floor(rect.h)
+    return {
+      { x = x + 2, y = y,         w = w - 4, h = 1 },
+      { x = x + 1, y = y + 1,     w = 2,     h = 1 },
+      { x = x + w - 3, y = y + 1, w = 2,     h = 1 },
+      { x = x, y = y + 2,         w = 2,     h = 1 },
+      { x = x + w - 2, y = y + 2, w = 2,     h = 1 },
+      { x = x, y = y + 3,         w = 1,     h = h - 6 },
+      { x = x + w - 1, y = y + 3, w = 1,     h = h - 6 },
+      { x = x, y = y + h - 3,     w = 2,     h = 1 },
+      { x = x + w - 2, y = y + h - 3, w = 2, h = 1 },
+      { x = x + 1, y = y + h - 2, w = 2,     h = 1 },
+      { x = x + w - 3, y = y + h - 2, w = 2, h = 1 },
+      { x = x + 2, y = y + h - 1, w = w - 4, h = 1 },
+    }
+  end
+
+  local function protectBlackSelector(trueColorRegions, rect)
+    for _, run in ipairs(selectorOutlineRuns(rect)) do
+      trueColorRegions[#trueColorRegions + 1] = run
+    end
+  end
+
+  local function roundedPaletteZones(zones, colors, x, y, width, height)
+    zones[#zones + 1] = {
+      colors = colors, x = x + 2, y = y, w = width - 4, h = height,
+    }
+    zones[#zones + 1] = {
+      colors = colors, x = x + 1, y = y + 1,
+      w = width - 2, h = height - 2,
+    }
+    zones[#zones + 1] = {
+      colors = colors, x = x, y = y + 2, w = width, h = height - 4,
+    }
+  end
+
+  local function roundedPaletteFrame(zones, border, face, rect, thickness)
+    roundedPaletteZones(zones, border, rect.x, rect.y, rect.w, rect.h)
+    thickness = thickness or 1
+    roundedPaletteZones(zones, face,
+      rect.x + thickness, rect.y + thickness,
+      rect.w - thickness * 2, rect.h - thickness * 2)
+  end
+
   local function responsiveWidth()
     local width, height
     if love.graphics.getPixelDimensions then
@@ -211,7 +341,7 @@ return function(mod, genderExports, compatibility, menuColors,
         width = width, height = SCREEN_H, compact = true,
         party = { x = 2, y = 19, w = 43, h = 84, cols = 2, rows = 3 },
         box = { x = 48, y = 19, w = width - 50, h = 84, cols = 5, rows = 4 },
-        detail = { x = 2, y = 106, w = width - 4, h = 28 },
+        detail = { x = 2, y = 106, w = width - 4, h = 29 },
       }
     end
 
@@ -223,7 +353,7 @@ return function(mod, genderExports, compatibility, menuColors,
       party = { x = 3, y = 17, w = partyW, h = 115, cols = 1, rows = 6 },
       box = { x = boxX, y = 17,
         w = width - boxX - detailW - 6, h = 115, cols = 5, rows = 4 },
-      detail = { x = width - detailW - 3, y = 18, w = detailW, h = 114 },
+      detail = { x = width - detailW - 3, y = 17, w = detailW, h = 115 },
     }
   end
 
@@ -232,22 +362,20 @@ return function(mod, genderExports, compatibility, menuColors,
     local zero = index - 1
     local column = zero % panel.cols
     local row = math.floor(zero / panel.cols)
-    local innerW, innerH = panel.w - 4, panel.h - 4
-    local x1 = panel.x + 2 + math.floor(column * innerW / panel.cols)
-    local x2 = panel.x + 2 + math.floor((column + 1) * innerW / panel.cols)
-    local y1 = panel.y + 2 + math.floor(row * innerH / panel.rows)
-    local y2 = panel.y + 2 + math.floor((row + 1) * innerH / panel.rows)
+    local innerW, innerH = panel.w - 6, panel.h - 6
+    local x1 = panel.x + 3 + math.floor(column * innerW / panel.cols)
+    local x2 = panel.x + 3 + math.floor((column + 1) * innerW / panel.cols)
+    local y1 = panel.y + 3 + math.floor(row * innerH / panel.rows)
+    local y2 = panel.y + 3 + math.floor((row + 1) * innerH / panel.rows)
     return { x = x1, y = y1, w = x2 - x1, h = y2 - y1 }
   end
 
-  local function panelFrame(panel, darkFace)
-    gray(BLACK)
-    chamfer("fill", panel.x + 1, panel.y + 1, panel.w, panel.h, 4)
-    gray(darkFace and DARK or WHITE)
-    chamfer("fill", panel.x, panel.y, panel.w, panel.h, 4)
-    gray(darkFace and BLACK or LIGHT)
-    chamfer("fill", panel.x + 2, panel.y + 2,
-      panel.w - 4, panel.h - 4, 3)
+  local function panelFrame(panel, faceShade)
+    gray(DARK)
+    pixelRoundFill(panel.x, panel.y, panel.w, panel.h)
+    gray(faceShade or WHITE)
+    pixelRoundFill(panel.x + 2, panel.y + 2,
+      panel.w - 4, panel.h - 4)
   end
 
   local function monName(screen, mon)
@@ -262,6 +390,11 @@ return function(mod, genderExports, compatibility, menuColors,
     return TYPE_PALETTES[tostring(primary or "NORMAL"):upper()]
       or PaletteFX.monPal(screen.game.data, mon and mon.species)
       or PaletteFX.pal(screen.game.data, "BLUEMON")
+  end
+
+  local function paletteForType(value)
+    return TYPE_PALETTES[tostring(value or "NORMAL"):upper()]
+      or TYPE_PALETTES.NORMAL
   end
 
   local function ensurePartyMon(screen, mon)
@@ -283,12 +416,6 @@ return function(mod, genderExports, compatibility, menuColors,
     local list = listFor(screen, screen.region)
     local index = screen.region == "party" and screen.partyIndex or screen.boxIndex
     return list[index], list, index
-  end
-
-  local function selectedPalette(screen)
-    return PaletteFX.pal(screen.game.data, "YELLOWMON")
-      or PaletteFX.pal(screen.game.data, "REDMON")
-      or monPalette(screen, selected(screen))
   end
 
   local function currentIndex(screen)
@@ -339,6 +466,8 @@ return function(mod, genderExports, compatibility, menuColors,
   end
 
   local function moveCursor(screen, direction)
+    local oldRegion = screen.region
+    local oldIndex = currentIndex(screen)
     local layout = layoutFor(screen)
     local panel = layout[screen.region]
     local index = currentIndex(screen)
@@ -372,6 +501,24 @@ return function(mod, genderExports, compatibility, menuColors,
     elseif direction == "down" and row < panel.rows - 1 then
       setCurrentIndex(screen, index + panel.cols)
     end
+
+    if screen.held
+        and (screen.region ~= oldRegion or currentIndex(screen) ~= oldIndex) then
+      if screen.region == "party" then
+        if oldRegion ~= "party" then
+          screen.leftPaneMode = "party"
+          screen.leftPaneManual = false
+        end
+      elseif not screen.leftPaneManual then
+        screen.leftPaneMode = "detail"
+      end
+    end
+  end
+
+  local function resetMoveView(screen)
+    screen.leftPaneMode = "party"
+    screen.leftPaneManual = false
+    screen.detailPage = 1
   end
 
   local function deposited(screen, mon)
@@ -383,6 +530,8 @@ return function(mod, genderExports, compatibility, menuColors,
     local held = screen.held
     if not held or held.sourceList[held.sourceIndex] ~= held.mon then
       screen.held = nil
+      screen.selectorBlinkElapsed = 0
+      resetMoveView(screen)
       screen.status = Strings("That POKéMON moved already.")
       return false
     end
@@ -395,6 +544,8 @@ return function(mod, genderExports, compatibility, menuColors,
     if sourceList == targetList then
       if sourceIndex == targetIndex then
         screen.held = nil
+        screen.selectorBlinkElapsed = 0
+        resetMoveView(screen)
         screen.status = Strings("Put %s back.", monName(screen, mon))
         return true
       end
@@ -432,6 +583,8 @@ return function(mod, genderExports, compatibility, menuColors,
     end
 
     screen.held = nil
+    screen.selectorBlinkElapsed = 0
+    resetMoveView(screen)
     screen.status = Strings("Moved %s.", monName(screen, mon))
     play(screen, "Swap")
     return true
@@ -452,7 +605,9 @@ return function(mod, genderExports, compatibility, menuColors,
       sourceRegion = screen.region,
       sourceBox = screen.region == "box" and screen.game.save.currentBox or nil,
     }
-    screen.status = Strings("Where should %s go?", monName(screen, mon))
+    screen.selectorBlinkElapsed = 0
+    resetMoveView(screen)
+    screen.status = nil
     play(screen, "Press_AB")
     return true
   end
@@ -538,7 +693,7 @@ return function(mod, genderExports, compatibility, menuColors,
     local mon = selected(screen)
     local items = {}
     if mon then
-      items[#items + 1] = { label = Strings("SUMMARY"), action = "summary" }
+      items[#items + 1] = { label = Strings("MOVE"), action = "move" }
       items[#items + 1] = {
         label = screen.region == "party" and Strings("SEND TO BOX")
           or Strings("ADD TO PARTY"),
@@ -567,6 +722,17 @@ return function(mod, genderExports, compatibility, menuColors,
             type(hooked))
         end
       end
+      local moveEntry
+      local ordered = {}
+      for _, entry in ipairs(items) do
+        if entry.action == "move" then
+          moveEntry = moveEntry or entry
+        elseif entry.action ~= "summary" then
+          ordered[#ordered + 1] = entry
+        end
+      end
+      if moveEntry then table.insert(ordered, 1, moveEntry) end
+      items = ordered
     end
     items[#items + 1] = { label = Strings("CANCEL"), action = "cancel" }
     return items
@@ -579,12 +745,8 @@ return function(mod, genderExports, compatibility, menuColors,
     if not action and type(entry.onSelect) == "function" then
       local mon = selected(screen)
       if mon then entry.onSelect(mon, screen.game) end
-    elseif action == "summary" then
-      local mon = selected(screen)
-      if mon then
-        ensurePartyMon(screen, mon)
-        Screens.push(screen.game, "SummaryMenu", mon)
-      end
+    elseif action == "move" then
+      pickOrDrop(screen)
     elseif action == "transfer" then
       quickTransfer(screen)
     elseif action == "release" then
@@ -624,8 +786,41 @@ return function(mod, genderExports, compatibility, menuColors,
     end
   end
 
+  local function leftPaneShowsDetails(screen)
+    return screen.held ~= nil and screen.leftPaneMode == "detail"
+  end
+
+  local function paneMons(screen)
+    local right = screen.held and screen.held.mon or selected(screen)
+    local left = leftPaneShowsDetails(screen) and selected(screen) or nil
+    return left, right
+  end
+
+  local function monHasMove(mon, slot)
+    return mon and mon.moves and mon.moves[slot] ~= nil
+  end
+
+  local function advanceDetailPage(screen)
+    local left, right = paneMons(screen)
+    local page = screen.detailPage or 1
+    for _ = 1, 8 do
+      page = page % 8 + 1
+      if page <= 4
+          or monHasMove(left, page - 4)
+          or monHasMove(right, page - 4) then
+        screen.detailPage = page
+        return
+      end
+    end
+    screen.detailPage = 1
+  end
+
   function PC:update(_dt)
     self.blink = ((self.blink or 0) + 1) % 320
+	local dt = tonumber(_dt)
+	if not dt or dt <= 0 then dt = 1 / 60 end
+	self.selectorBlinkElapsed =
+	  ((self.selectorBlinkElapsed or 0) + dt) % SELECTOR_PERIOD_SECONDS
 	self.marquee = (self.marquee or 0) + 1
     local input = self.game.input
     if self.actions then
@@ -641,32 +836,48 @@ return function(mod, genderExports, compatibility, menuColors,
       if input:wasPressed(direction) then
         self.status = nil
         moveCursor(self, direction)
+		self.selectorBlinkElapsed = 0
         return
       end
     end
 
     if input:wasPressed("a") then
-      pickOrDrop(self)
+      if self.held then
+        pickOrDrop(self)
+      else
+        self.status = nil
+        play(self, "Press_AB")
+        local items = actionItems(self)
+        if #items == 1 then
+          self.status = Strings("That slot is empty.")
+        else
+          self.actions = items
+          self.actionIndex = 1
+        end
+      end
     elseif input:wasPressed("b") then
       if self.held then
         self.held = nil
+        self.selectorBlinkElapsed = 0
+        resetMoveView(self)
         self.status = Strings("Move cancelled.")
       else
         self.game.stack:pop()
       end
       play(self, "Press_AB")
     elseif input:wasPressed("select") then
-      beginBoxSwitcher(self)
-    elseif input:wasPressed("start") and not self.held then
+      if self.held then
+        self.leftPaneMode = leftPaneShowsDetails(self) and "party" or "detail"
+        self.leftPaneManual = true
+        self.status = nil
+        play(self, "Press_AB")
+      else
+        beginBoxSwitcher(self)
+      end
+    elseif input:wasPressed("start") then
       self.status = nil
       play(self, "Press_AB")
-      local items = actionItems(self)
-      if #items == 1 then
-        self.status = Strings("That slot is empty.")
-      else
-        self.actions = items
-        self.actionIndex = 1
-      end
+      advanceDetailPage(self)
     end
   end
 
@@ -683,9 +894,6 @@ return function(mod, genderExports, compatibility, menuColors,
   local function drawHeader(screen, layout)
     gray(DARK)
     love.graphics.rectangle("fill", 0, 0, layout.width, HEADER_H)
-    gray(LIGHT)
-    love.graphics.rectangle("fill", 0, HEADER_H - 2, layout.width, 2)
-
     local box = Boxes.active(screen.game.save)
     local label = layout.compact
       and Strings("BOX%02d", screen.game.save.currentBox)
@@ -694,7 +902,7 @@ return function(mod, genderExports, compatibility, menuColors,
     local selectorW = math.min(layout.box.w - 2, Font.width(label) + 16)
     local selectorX = layout.compact and layout.box.x + 1
       or math.floor(layout.box.x + (layout.box.w - selectorW) / 2)
-    local selectorY = 1
+    local selectorY = 0
     if screen.boxSwitching then
       gray(BLACK)
       chamfer("fill", selectorX, selectorY, selectorW, 12, 2)
@@ -706,28 +914,28 @@ return function(mod, genderExports, compatibility, menuColors,
       if shader then love.graphics.setShader(shader) end
       gray(WHITE)
       if left then
-        love.graphics.translate(x + 8, 4)
+        love.graphics.translate(x + 8, 3)
         love.graphics.scale(-1, 1)
         Font.drawCode(Theme.cursor, 0, 0)
       else
-        Font.drawCode(Theme.cursor, x, 4)
+        Font.drawCode(Theme.cursor, x, 3)
       end
       love.graphics.pop()
     end
     drawArrow(selectorX, true)
     drawArrow(selectorX + selectorW - 8, false)
-    drawCentered(label, selectorX + selectorW / 2, 4,
+    drawCentered(label, selectorX + selectorW / 2, 3,
       selectorW - 16, WHITE)
 
     if layout.compact then
-      drawText(Strings("PARTY"), 4, 4, 40, WHITE)
+      drawText(Strings("PARTY"), 4, 3, 40, WHITE)
       drawRight(("%02d/%02d"):format(#box, Boxes.CAPACITY),
-        layout.width - 4, 4, 48, WHITE)
+        layout.width - 4, 3, 48, WHITE)
     else
       drawCentered(Strings("PARTY"), layout.party.x + layout.party.w / 2,
-        4, layout.party.w - 8, WHITE)
+        3, layout.party.w - 8, WHITE)
       drawCentered(Strings("DETAILS"),
-        layout.detail.x + layout.detail.w / 2, 4,
+        layout.detail.x + layout.detail.w / 2, 3,
         layout.detail.w - 8, WHITE)
     end
   end
@@ -989,6 +1197,17 @@ return function(mod, genderExports, compatibility, menuColors,
     return 9
   end
 
+  local function genderWidth(mon)
+    if not (genderExports and type(genderExports.genderOf) == "function"
+        and type(genderExports.symbol) == "function") then
+      return 0
+    end
+    local okGender, gender = pcall(genderExports.genderOf, mon)
+    if not okGender then return 0 end
+    local okSymbol, symbol = pcall(genderExports.symbol, gender)
+    return okSymbol and type(symbol) == "string" and symbol ~= "" and 9 or 0
+  end
+
   local function isHeldOrigin(screen, region, list, index)
     local held = screen.held
     if not held or held.sourceList ~= list or held.sourceIndex ~= index then
@@ -998,13 +1217,161 @@ return function(mod, genderExports, compatibility, menuColors,
     return held.sourceBox == screen.game.save.currentBox
   end
 
-  local function drawGrip(rect)
-    gray(WHITE)
-    love.graphics.rectangle("fill", rect.x + 2, rect.y + 2, 3, 2)
-    love.graphics.rectangle("fill", rect.x + rect.w - 5, rect.y + 2, 3, 2)
-    love.graphics.rectangle("fill", rect.x + 2, rect.y + rect.h - 4, 3, 2)
-    love.graphics.rectangle("fill", rect.x + rect.w - 5,
-      rect.y + rect.h - 4, 3, 2)
+  local function cleanTinyText(text)
+    return tostring(text or ""):gsub("%.", ""):upper()
+  end
+
+  local function tinyTextWidth(text)
+    local length = #cleanTinyText(text)
+    return length > 0 and length * 4 - 1 or 0
+  end
+
+  local function tinyTextFit(text, maxWidth)
+    text = cleanTinyText(text)
+    local count = math.max(0, math.floor((math.floor(maxWidth or 0) + 1) / 4))
+    return text:sub(1, count)
+  end
+
+  local function drawTinyText(text, x, y, shade)
+    text = cleanTinyText(text)
+    gray(shade)
+    local cursor = math.floor(x)
+    y = math.floor(y)
+    for character in tostring(text):gmatch(".") do
+      local glyph = TINY_GLYPHS[character]
+      if glyph then
+        for row = 1, 5 do
+          for column = 1, 3 do
+            if glyph[row]:sub(column, column) == "1" then
+              love.graphics.rectangle("fill", cursor + column - 1,
+                y + row - 1, 1, 1)
+            end
+          end
+        end
+      end
+      cursor = cursor + 4
+    end
+    return tinyTextWidth(text)
+  end
+
+  local function drawTinyCentered(text, centerX, y, maxWidth, shade)
+    text = tinyTextFit(text, maxWidth)
+    local width = tinyTextWidth(text)
+    drawTinyText(text, math.floor(centerX - width / 2), y, shade)
+  end
+
+  -- A fixed 4x6 face keeps every ten-character nickname on even the narrowest
+  -- data pane while remaining visibly larger than the 3x5 metadata face.
+  local function mediumTextWidth(text)
+    local length = #cleanTinyText(text)
+    return length > 0 and length * 5 - 1 or 0
+  end
+
+  local function mediumTextFit(text, maxWidth)
+    text = cleanTinyText(text)
+    local count = math.max(0, math.floor((math.floor(maxWidth or 0) + 1) / 5))
+    return text:sub(1, count)
+  end
+
+  local function drawMediumText(text, x, y, shade)
+    text = cleanTinyText(text)
+    gray(shade)
+    local cursor = math.floor(x)
+    y = math.floor(y)
+    for character in text:gmatch(".") do
+      local glyph = TINY_GLYPHS[character]
+      if glyph then
+        for dy = 0, 5 do
+          local sourceRow = math.floor(dy * 5 / 6) + 1
+          for dx = 0, 3 do
+            local sourceColumn = math.floor(dx * 3 / 4) + 1
+            if glyph[sourceRow]:sub(sourceColumn, sourceColumn) == "1" then
+              love.graphics.rectangle("fill", cursor + dx, y + dy, 1, 1)
+            end
+          end
+        end
+      end
+      cursor = cursor + 5
+    end
+    return mediumTextWidth(text)
+  end
+
+  local function drawMediumCentered(text, centerX, y, maxWidth, shade)
+    text = mediumTextFit(text, maxWidth)
+    drawMediumText(text, math.floor(centerX - mediumTextWidth(text) / 2),
+      y, shade)
+  end
+
+  local function ownedPalette(palette)
+    if type(rawPaletteCopy) ~= "function" or type(palette) ~= "table" then
+      return palette
+    end
+    local owned = rawTypePalettes[palette]
+    if not owned then
+      owned = rawPaletteCopy(palette)
+      rawTypePalettes[palette] = owned
+    end
+    return owned
+  end
+
+  local function ownedTypePalette(screen, mon)
+    return ownedPalette(monPalette(screen, mon))
+  end
+
+  local function paletteLuminance(color)
+    if type(color) ~= "table" then return -math.huge end
+    return (tonumber(color[1]) or 0) * 0.2126
+      + (tonumber(color[2]) or 0) * 0.7152
+      + (tonumber(color[3]) or 0) * 0.0722
+  end
+
+  -- Data panes always use paper as shade one and light-to-dark ink as shades
+  -- two through four. Rebuilding by luminance makes their words independent
+  -- of the global inverse option without changing any type-owned border ramp.
+  local function lockedDataPaper(game)
+    local source = type(menuColors) == "function" and menuColors(game) or nil
+    local paper = type(menuPaper) == "function" and menuPaper(game) or nil
+    if type(source) ~= "table" then return paper end
+    local shades = {}
+    for index = 1, 4 do
+      if type(source[index]) == "table" then shades[#shades + 1] = source[index] end
+    end
+    table.sort(shades, function(a, b)
+      return paletteLuminance(a) > paletteLuminance(b)
+    end)
+    if #shades < 4 then return paper or source end
+    local locked = {
+      paper and paper[1] or shades[1], shades[2], shades[3], shades[4],
+    }
+    return type(rawPaletteCopy) == "function" and rawPaletteCopy(locked) or locked
+  end
+
+  local function drawTypeMatchedIcon(screen, mon, x, y, animate, scale,
+      trueColorRegions, background)
+    local palette = ownedTypePalette(screen, mon)
+    local shader = palette and PaletteFX.shader()
+    local discardedRegions = {}
+    local target = 16 * scale
+    fillTrueColorBacking(background, x, y, target, target)
+    love.graphics.push("all")
+    if shader then
+      PaletteFX.sendColors(shader, palette)
+      love.graphics.setShader(shader)
+    end
+    if isHgssIcon(screen, mon) then
+      local entry = iconEntry(screen, mon)
+      if not drawFittedHgssIcon(screen, mon, entry, x, y,
+          animate, target, discardedRegions) then
+        drawSharedIcon(screen, mon, x, y, animate,
+          target / 32, discardedRegions)
+      end
+    else
+      drawSharedIcon(screen, mon, x, y, animate, scale, discardedRegions)
+    end
+    love.graphics.pop()
+    trueColorRegions[#trueColorRegions + 1] = {
+      x = x, y = y, w = target, h = target,
+    }
   end
 
   local function drawSlot(screen, layout, region, list, index,
@@ -1013,42 +1380,48 @@ return function(mod, genderExports, compatibility, menuColors,
     local mon = list[index]
     local chosen = screen.region == region and currentIndex(screen) == index
     local origin = isHeldOrigin(screen, region, list, index)
+    local showSelector = chosen and selectorVisible(screen)
 
-    if chosen then
+    if showSelector then
       gray(BLACK)
-      chamfer("fill", rect.x, rect.y, rect.w, rect.h, 2)
-      gray(DARK)
-      chamfer("fill", rect.x + 2, rect.y + 2,
-        rect.w - 4, rect.h - 4, 1)
-    elseif mon then
+      pixelRoundFill(rect.x, rect.y, rect.w, rect.h)
       gray(WHITE)
-      love.graphics.rectangle("fill", rect.x + 1, rect.y + 1,
+      pixelRoundFill(rect.x + 1, rect.y + 1,
+        rect.w - 2, rect.h - 2)
+      protectBlackSelector(trueColorRegions, rect)
+    elseif mon then
+      gray(DARK)
+      pixelRoundFill(rect.x, rect.y, rect.w, rect.h)
+      gray(WHITE)
+      pixelRoundFill(rect.x + 1, rect.y + 1,
         rect.w - 2, rect.h - 2)
     else
       gray(DARK)
-      love.graphics.rectangle("line", rect.x + 2, rect.y + 2,
-        math.max(1, rect.w - 5), math.max(1, rect.h - 5))
+      pixelRoundFill(rect.x + 2, rect.y + 2,
+        rect.w - 4, rect.h - 4)
+      gray(WHITE)
+      pixelRoundFill(rect.x + 3, rect.y + 3,
+        rect.w - 6, rect.h - 6)
     end
 
     if mon then
-      local face = chosen
-        and colorFromPalette(selectedPalette(screen), 3)
-        or colorFromPalette(monPalette(screen, mon), 1)
+      local paper = type(menuPaper) == "function" and menuPaper(screen.game)
+        or (type(menuColors) == "function" and menuColors())
+      local face = colorFromPalette(paper or monPalette(screen, mon), 1)
       if region == "party" and not layout.compact then
-        drawMonIcon(screen, mon, rect.x + 2,
-          rect.y + math.max(0, math.floor((rect.h - 16) / 2)),
+        drawTypeMatchedIcon(screen, mon, rect.x + 3,
+          rect.y + math.max(1, math.floor((rect.h - 16) / 2) - 1),
           iconAnimationEnabled(screen) and chosen, 1,
           trueColorRegions, face)
-        local ink = chosen and WHITE or BLACK
-        drawText(monName(screen, mon), rect.x + 20, rect.y + 2,
-          rect.w - 23, ink)
-        local levelY = rect.y + rect.h - 10
-        local genderWidth = drawGenderGlyph(mon, rect.x + 20, levelY,
-          face, trueColorRegions)
-        drawText(Strings("L%d", mon.level or 1), rect.x + 20 + genderWidth,
-          levelY, rect.w - 23 - genderWidth, ink)
+        local textX = rect.x + 23
+        local textW = rect.w - 26
+        local blockY = rect.y + math.floor((rect.h - 11) / 2)
+        drawTinyText(tinyTextFit(monName(screen, mon), textW),
+          textX, blockY, BLACK)
+        drawTinyText("L" .. tostring(math.max(1, math.min(100,
+          mon.level or 1))), textX, blockY + 6, BLACK)
       else
-        drawMonIcon(screen, mon,
+        drawTypeMatchedIcon(screen, mon,
           rect.x + math.floor((rect.w - 16) / 2),
           rect.y + math.floor((rect.h - 16) / 2),
           iconAnimationEnabled(screen) and chosen, 1,
@@ -1057,85 +1430,416 @@ return function(mod, genderExports, compatibility, menuColors,
     end
 
     if origin then
-      gray(chosen and WHITE or DARK)
+      gray(BLACK)
       love.graphics.line(rect.x + 3, rect.y + 3,
         rect.x + rect.w - 4, rect.y + rect.h - 4)
       love.graphics.line(rect.x + rect.w - 4, rect.y + 3,
         rect.x + 3, rect.y + rect.h - 4)
     end
-    if chosen and screen.held then drawGrip(rect) end
   end
 
-  local function drawDetails(screen, layout, trueColorRegions)
-    panelFrame(layout.detail, true)
-    local mon = screen.held and screen.held.mon or selected(screen)
-    if not mon then
-      drawCentered(Strings("EMPTY SLOT"),
-        layout.detail.x + layout.detail.w / 2,
-        layout.detail.y + math.floor((layout.detail.h - 8) / 2),
-        layout.detail.w - 10, LIGHT)
-      return
-    end
-
-    local def = screen.game.data.pokemon[mon.species] or {}
-    local name = monName(screen, mon)
-    local location = screen.held and Strings("MOVING")
-      or (screen.region == "party" and Strings("PARTY")
-        or Strings("BOX %02d", screen.game.save.currentBox))
-    local detailFace = colorFromPalette(monPalette(screen, mon), 4)
-
-    if layout.compact then
-      drawMonIcon(screen, mon, layout.detail.x + 6, layout.detail.y + 6,
-        false, 1, trueColorRegions, detailFace)
-      drawText(name, layout.detail.x + 27, layout.detail.y + 4,
-        math.max(32, layout.detail.w - 92), WHITE)
-      local genderWidth = drawGenderGlyph(mon, layout.detail.x + 27,
-        layout.detail.y + 15, detailFace, trueColorRegions)
-      drawText(Strings("LV%d  %s", mon.level or 1, location),
-        layout.detail.x + 27 + genderWidth, layout.detail.y + 15,
-        layout.detail.w - 34 - genderWidth, LIGHT)
-      if mon.stats and mon.hp then
-        drawRight(Strings("HP %d/%d", mon.hp, mon.stats.hp),
-          layout.detail.x + layout.detail.w - 5, layout.detail.y + 4,
-          72, WHITE)
+  local function opaqueRuns(path)
+    if not path then return nil end
+    local ok, data = pcall(Assets.imageData, path)
+    if not ok or not data then return nil end
+    local width, height = data:getDimensions()
+    local runs = {}
+    for y = 0, height - 1 do
+      local start
+      for x = 0, width - 1 do
+        local _, _, _, alpha = data:getPixel(x, y)
+        local opaque = (alpha or 0) > 0.01
+        if opaque and not start then start = x end
+        if start and (not opaque or x == width - 1) then
+          local finish = opaque and x or x - 1
+          runs[#runs + 1] = { x = start, y = y, w = finish - start + 1 }
+          start = nil
+        end
       end
+    end
+    return runs
+  end
+
+  local function battleSpriteFor(screen, mon)
+    local cached = battleSpriteCache[mon]
+    if cached then return cached.image, cached.trueColor, cached.runs end
+    local path, trueColor = Sprites.path(screen.game.data, mon.species,
+      "front", { mon = mon, kind = "battle" })
+    local ok, image = false, nil
+    if path then ok, image = pcall(Assets.image, path) end
+    cached = { image = ok and image or false, trueColor = trueColor == true,
+      runs = opaqueRuns(path) }
+    battleSpriteCache[mon] = cached
+    return cached.image or nil, cached.trueColor, cached.runs
+  end
+
+  local function battleSpriteRect(panel, image, availableH, top)
+    if not image then return nil end
+    local width, height = image:getDimensions()
+    local availableW = panel.w - 8
+    availableH = availableH or 48
+    local scale = math.min(1, availableW / width, availableH / height)
+    local drawW, drawH = width * scale, height * scale
+    return {
+      x = math.floor(panel.x + (panel.w - drawW) / 2),
+      y = math.floor(panel.y + (top or 16) + (availableH - drawH) / 2),
+      w = drawW, h = drawH, scale = scale,
+    }
+  end
+
+  local function getXpMarkImage()
+    if xpMarkImage ~= nil then return xpMarkImage or nil end
+    local ok, image = pcall(love.graphics.newImage,
+      mod.path .. "/assets/xp_x.png")
+    if not ok or not image then
+      xpMarkImage = false
+      return nil
+    end
+    image:setFilter("nearest", "nearest")
+    xpMarkImage = image
+    return image
+  end
+
+  local function drawXpLabel(x, y)
+    love.graphics.setColor(1, 1, 1, 1)
+    HudTiles.tile(0x71, x, y)
+    local sx, sy, sw, sh = love.graphics.getScissor()
+    love.graphics.setScissor(x + 8, y, 6, 8)
+    HudTiles.tile(0x62, x + 8, y)
+    if sx then
+      love.graphics.setScissor(sx, sy, sw, sh)
+    else
+      love.graphics.setScissor()
+    end
+    gray(WHITE)
+    love.graphics.rectangle("fill", x + 1, y + 2, 4, 4)
+    local image = getXpMarkImage()
+    if image then
+      gray(BLACK)
+      love.graphics.draw(image, x + 1, y + 2)
+    end
+  end
+
+  local function drawHpLabel(x, y)
+    love.graphics.setColor(1, 1, 1, 1)
+    HudTiles.tile(0x71, x, y)
+    local sx, sy, sw, sh = love.graphics.getScissor()
+    love.graphics.setScissor(x + 8, y, 6, 8)
+    HudTiles.tile(0x62, x + 8, y)
+    if sx then
+      love.graphics.setScissor(sx, sy, sw, sh)
+    else
+      love.graphics.setScissor()
+    end
+  end
+
+  local function drawMeter(labelDrawer, ratio, fillColor, panel, y,
+      trueColorRegions)
+    local x = panel.x + 4
+    local barX = x + 15
+    local barWidth = math.max(8, panel.w - 25)
+    labelDrawer(x, y)
+    gray(BLACK)
+    love.graphics.rectangle("fill", barX, y + 2, barWidth, 1)
+    love.graphics.rectangle("fill", barX - 1, y + 3, 1, 2)
+    love.graphics.rectangle("fill", barX + barWidth, y + 3, 1, 2)
+    love.graphics.rectangle("fill", barX, y + 5, barWidth, 1)
+    local clampedRatio = math.max(0, math.min(1, ratio))
+    local fillWidth = clampedRatio > 0
+      and math.max(1, math.floor(barWidth * clampedRatio)) or 0
+    if fillWidth > 0 then
+      love.graphics.setColor(fillColor[1], fillColor[2], fillColor[3], 1)
+      love.graphics.rectangle("fill", barX, y + 3, fillWidth, 2)
+      trueColorRegions[#trueColorRegions + 1] = {
+        x = barX, y = y + 3, w = fillWidth, h = 2,
+      }
+    end
+  end
+
+  local function hpFillColor(screen, ratio)
+    if ratio >= 27 / 48 then return { 0, 189 / 255, 0 } end
+    local name = ratio >= 27 / 48 and "GREENBAR"
+      or ratio >= 10 / 48 and "YELLOWBAR" or "REDBAR"
+    local palette = PaletteFX.pal(screen.game.data, name)
+    local color = palette and palette[3] or { 0, 189, 0 }
+    return { color[1] / 255, color[2] / 255, color[3] / 255 }
+  end
+
+  local function drawFittedHPBar(screen, mon, panel, y, trueColorRegions)
+    local maxHP = mon.stats and mon.stats.hp or 1
+    local ratio = math.max(0, math.min(1, (mon.hp or 0) / math.max(1, maxHP)))
+    drawMeter(drawHpLabel, ratio, hpFillColor(screen, ratio), panel, y,
+      trueColorRegions)
+  end
+
+  local function drawXpBar(ratio, panel, y, trueColorRegions)
+    drawMeter(drawXpLabel, ratio, { 0.32, 0.68, 0.96 }, panel, y,
+      trueColorRegions)
+  end
+
+  local function typeAbbreviation(value)
+    local key = tostring(value or ""):upper()
+    return TYPE_ABBREVIATIONS[key] or key:sub(1, 3)
+  end
+
+  local function detailTypeBadges(panel, types, hasGender)
+    local badges = {}
+    local left = panel.x + 3 + (hasGender and 9 or 0)
+    local right = panel.x + panel.w - 3
+    local cursorX = right
+    local y = panel.y + 3
+    for _, value in ipairs(types or {}) do
+      local text = typeAbbreviation(value)
+      local width = tinyTextWidth(text) + 6
+      if cursorX - width < left then
+        cursorX = right
+        y = y + 10
+      end
+      local rect = { x = cursorX - width, y = y, w = width, h = 9 }
+      badges[#badges + 1] = {
+        value = value, text = text, rect = rect,
+        palette = ownedPalette(paletteForType(value)),
+      }
+      cursorX = rect.x - 1
+    end
+    local genderPosition
+    if hasGender then
+      local firstRowLeft = right
+      for _, badge in ipairs(badges) do
+        if badge.rect.y == panel.y + 3 then
+          firstRowLeft = math.min(firstRowLeft, badge.rect.x)
+        end
+      end
+      genderPosition = {
+        x = firstRowLeft - 9,
+        y = panel.y + 3,
+      }
+    end
+    return badges, genderPosition
+  end
+
+  local function drawTypeBadges(badges)
+    for _, badge in ipairs(badges) do
+      local rect = badge.rect
+      gray(DARK)
+      pixelRoundFill(rect.x, rect.y, rect.w, rect.h)
+      gray(WHITE)
+      pixelRoundFill(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
+      drawTinyCentered(badge.text, rect.x + rect.w / 2,
+        rect.y + 2, rect.w - 2, BLACK)
+    end
+  end
+
+  local function detailFaceFor(screen, mon)
+    local paper = lockedDataPaper(screen.game)
+    return colorFromPalette(paper or monPalette(screen, mon), 1)
+  end
+
+  local function drawBattleSprite(screen, panel, mon, trueColorRegions,
+      availableH, top)
+    local image, trueColor, runs = battleSpriteFor(screen, mon)
+    local rect = battleSpriteRect(panel, image, availableH, top)
+    if not (image and rect) then return end
+    local face = detailFaceFor(screen, mon)
+    if not (runs and runs[1]) then
+      fillTrueColorBacking(face, rect.x, rect.y, rect.w, rect.h)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    local shader
+    if not trueColor then
+      local palette = PaletteFX.monPal(screen.game.data, mon.species)
+        or monPalette(screen, mon)
+      shader = palette and PaletteFX.shader()
+      if shader then
+        PaletteFX.sendColors(shader, palette)
+        love.graphics.setShader(shader)
+      end
+    end
+    love.graphics.draw(image, rect.x, rect.y, 0, rect.scale, rect.scale)
+    if shader then love.graphics.setShader() end
+    if runs and runs[1] then
+      for _, run in ipairs(runs) do
+        trueColorRegions[#trueColorRegions + 1] = {
+          x = rect.x + run.x * rect.scale,
+          y = rect.y + run.y * rect.scale,
+          w = math.max(1, run.w * rect.scale),
+          h = math.max(1, rect.scale),
+        }
+      end
+    else
+      trueColorRegions[#trueColorRegions + 1] = rect
+    end
+  end
+
+  local function drawDataHeader(screen, panel, mon, trueColorRegions)
+    local def = screen.game.data.pokemon[mon.species] or {}
+    local hasGender = genderWidth(mon) > 0
+    local badges, genderPosition = detailTypeBadges(
+      panel, def.types or {}, hasGender)
+    if mon.status then
+      drawTinyText(Status.hudLabelFor(screen.game.data.statuses, mon.status),
+        panel.x + 4, panel.y + 5, BLACK)
+    end
+    if genderPosition then
+      drawGenderGlyph(mon, genderPosition.x, genderPosition.y,
+        detailFaceFor(screen, mon), trueColorRegions)
+    end
+    drawTypeBadges(badges)
+    return def
+  end
+
+  local function moveInfo(screen, mon, slot)
+    local move = mon and mon.moves and mon.moves[slot]
+    return move, move and screen.game.data.moves[move.id] or nil
+  end
+
+  local function maxMovePP(move, def)
+    if not (move and def) then return 0 end
+    local base = tonumber(def.pp) or 0
+    return base + (move.ppUps or 0) * math.floor(base / 5)
+  end
+
+  local function moveClass(def)
+    if not def then return "---" end
+    if tonumber(def.power) == 0 then return "STATUS" end
+    return tostring(def.category or TypeChart.category(def.type) or "---"):upper()
+  end
+
+  local function drawOverview(screen, panel, mon, location, def,
+      trueColorRegions)
+    drawBattleSprite(screen, panel, mon, trueColorRegions, 48, 16)
+    local infoY = panel.y + 66
+    drawMediumCentered(monName(screen, mon), panel.x + panel.w / 2,
+      infoY, panel.w - 8, BLACK)
+    drawTinyCentered("LVL " .. tostring(mon.level or 1),
+      panel.x + panel.w / 2, infoY + 8, panel.w - 8, BLACK)
+    drawTinyCentered(location, panel.x + panel.w / 2,
+      infoY + 15, panel.w - 8, BLACK)
+    local meterY = panel.y + panel.h - 18
+    drawFittedHPBar(screen, mon, panel, meterY, trueColorRegions)
+    local level = math.max(1, math.min(100, mon.level or 1))
+    local rates = screen.game.data.growth_rates
+    local current = Growth.expForLevel(def.growthRate, level, rates)
+    local following = level < 100
+      and Growth.expForLevel(def.growthRate, level + 1, rates) or current
+    local ratio = level >= 100 and 1
+      or ((mon.exp or current) - current) / math.max(1, following - current)
+    drawXpBar(ratio, panel, meterY + 7, trueColorRegions)
+  end
+
+  local function drawTrainerPage(screen, panel, mon, trueColorRegions)
+    drawBattleSprite(screen, panel, mon, trueColorRegions, 34, 14)
+    drawMediumCentered(monName(screen, mon), panel.x + panel.w / 2,
+      panel.y + 51, panel.w - 8, BLACK)
+    local player = screen.game.save.player or {}
+    drawTinyCentered("OT " .. tostring(mon.ot or player.name or "RED"),
+      panel.x + panel.w / 2, panel.y + 67, panel.w - 8, BLACK)
+    drawTinyCentered(("ID NO %05d"):format(mon.otId or player.id or 0),
+      panel.x + panel.w / 2, panel.y + 78, panel.w - 8, BLACK)
+  end
+
+  local function drawStatsPage(screen, panel, mon, trueColorRegions)
+    drawBattleSprite(screen, panel, mon, trueColorRegions, 30, 14)
+    drawMediumCentered(monName(screen, mon), panel.x + panel.w / 2,
+      panel.y + 47, panel.w - 8, BLACK)
+    local stats = mon.stats or {}
+    local rows = {
+      { "ATTACK", stats.attack or 0 }, { "DEFENSE", stats.defense or 0 },
+      { "SPEED", stats.speed or 0 }, { "SPECIAL", stats.special or 0 },
+    }
+    for index, row in ipairs(rows) do
+      local y = panel.y + 61 + (index - 1) * 11
+      drawTinyText(row[1], panel.x + 5, y, BLACK)
+      local value = tostring(row[2])
+      drawTinyText(value, panel.x + panel.w - 5 - tinyTextWidth(value), y, BLACK)
+    end
+  end
+
+  local function drawMovesPage(screen, panel, mon)
+    for slot = 1, 4 do
+      local move, def = moveInfo(screen, mon, slot)
+      local y = panel.y + 15 + (slot - 1) * 23
+      if move and def then
+        drawMediumCentered(def.name or move.id, panel.x + panel.w / 2,
+          y, panel.w - 8, BLACK)
+        local detail = typeAbbreviation(def.type) .. " PP ("
+          .. tostring(move.pp or 0) .. "/" .. tostring(maxMovePP(move, def))
+          .. ")"
+        drawTinyCentered(detail, panel.x + panel.w / 2,
+          y + 8, panel.w - 8, BLACK)
+      else
+        drawMediumCentered("NONE", panel.x + panel.w / 2,
+          y + 3, panel.w - 8, BLACK)
+      end
+    end
+  end
+
+  local function drawMoveDetailPage(screen, panel, mon, slot)
+    local move, def = moveInfo(screen, mon, slot)
+    if not (move and def) then
+      drawMediumCentered("NONE", panel.x + panel.w / 2,
+        panel.y + math.floor((panel.h - 6) / 2), panel.w - 8, BLACK)
       return
     end
-
-    local iconScale = layout.detail.w >= 76 and 2 or 1
-    local iconSize = 16 * iconScale
-    drawMonIcon(screen, mon,
-      layout.detail.x + math.floor((layout.detail.w - iconSize) / 2),
-      layout.detail.y + 8, false, iconScale,
-      trueColorRegions, detailFace)
-    local infoY = layout.detail.y + 14 + iconSize
-    drawCentered(name, layout.detail.x + layout.detail.w / 2,
-      infoY, layout.detail.w - 10, WHITE)
-    local levelText = Strings("LV%d", mon.level or 1)
-    local levelWidth = Font.width(levelText)
-    local genderWidth = genderExports and 9 or 0
-    local levelX = math.floor(layout.detail.x +
-      (layout.detail.w - levelWidth - genderWidth) / 2)
-    genderWidth = drawGenderGlyph(mon, levelX, infoY + 11,
-      detailFace, trueColorRegions)
-    drawText(levelText, levelX + genderWidth, infoY + 11,
-      levelWidth, LIGHT)
-    local types = def.types or {}
-    local typeText = tostring(types[1] or "---")
-    if types[2] then typeText = typeText .. "/" .. tostring(types[2]) end
-    drawCentered(typeText, layout.detail.x + layout.detail.w / 2,
-      infoY + 23, layout.detail.w - 10, LIGHT)
-    if mon.stats and mon.hp then
-      local hpText = layout.detail.w >= 72
-        and Strings("HP %d/%d", mon.hp, mon.stats.hp)
-        or Strings("HP %d", mon.hp)
-      drawCentered(hpText,
-        layout.detail.x + layout.detail.w / 2, infoY + 35,
-        layout.detail.w - 10, WHITE)
+    drawMediumCentered(def.name or move.id, panel.x + panel.w / 2,
+      panel.y + 7, panel.w - 8, BLACK)
+    local accuracy = tonumber(def.accuracy)
+    local power = tonumber(def.power)
+    local rows = {
+      { "TYPE", typeAbbreviation(def.type) },
+      { "CLASS", moveClass(def) },
+      { "POWER", power and power > 0 and tostring(math.floor(power)) or "---" },
+      { "ACCURACY", accuracy and (tostring(math.floor(accuracy)) .. "%") or "---" },
+      { "PP", tostring(move.pp or 0) .. "/" .. tostring(maxMovePP(move, def)) },
+    }
+    for index, row in ipairs(rows) do
+      local y = panel.y + 25 + (index - 1) * 15
+      drawTinyText(row[1], panel.x + 5, y, BLACK)
+      drawTinyText(row[2], panel.x + panel.w - 5 - tinyTextWidth(row[2]),
+        y, BLACK)
     end
-    drawCentered(location, layout.detail.x + layout.detail.w / 2,
-      layout.detail.y + layout.detail.h - 13,
-      layout.detail.w - 10, LIGHT)
+  end
+
+  local function drawDataPane(screen, panel, mon, location, page,
+      trueColorRegions, compact)
+    panelFrame(panel, false)
+    if not mon then
+      drawMediumCentered("EMPTY", panel.x + panel.w / 2,
+        panel.y + math.floor((panel.h - 6) / 2), panel.w - 8, BLACK)
+      return
+    end
+    ensurePartyMon(screen, mon)
+    if compact then
+      drawMonIcon(screen, mon, panel.x + 6, panel.y + 6,
+        false, 1, trueColorRegions, detailFaceFor(screen, mon))
+      drawMediumText(monName(screen, mon), panel.x + 27, panel.y + 5, BLACK)
+      drawTinyText("LVL " .. tostring(mon.level or 1) .. " " .. location,
+        panel.x + 27, panel.y + 16, BLACK)
+      return
+    end
+    local def
+    if page <= 4 then
+      def = drawDataHeader(screen, panel, mon, trueColorRegions)
+    else
+      def = screen.game.data.pokemon[mon.species] or {}
+    end
+    if page == 1 then
+      drawOverview(screen, panel, mon, location, def, trueColorRegions)
+    elseif page == 2 then
+      drawTrainerPage(screen, panel, mon, trueColorRegions)
+    elseif page == 3 then
+      drawStatsPage(screen, panel, mon, trueColorRegions)
+    elseif page == 4 then
+      drawMovesPage(screen, panel, mon)
+    else
+      drawMoveDetailPage(screen, panel, mon, page - 4)
+    end
+  end
+
+  local function detailLocation(screen, heldPane)
+    if heldPane then return Strings("MOVING") end
+    return screen.region == "party" and Strings("PARTY")
+      or Strings("BOX %02d", screen.game.save.currentBox)
   end
 
   local function drawFooter(screen, layout)
@@ -1144,11 +1848,10 @@ return function(mod, genderExports, compatibility, menuColors,
     local message = screen.status
     if not message then
       if screen.held then
-        message = layout.compact and Strings("A PLACE  B CANCEL")
-          or Strings("A PLACE B CANCEL SEL BOXES")
+        message = Strings("[SELECT] TOGGLE PARTY")
       else
-        message = layout.compact and Strings("[A] MOVE   [SELECT] BOX")
-		  or Strings("[A] MOVE   [START] OPTIONS   [SELECT] BOXES")
+        message = layout.compact and Strings("[A] OPTIONS  [START] DETAILS")
+		  or Strings("[A] OPTIONS [START] DETAILS [SELECT] BOXES")
       end
     end
     if screen.boxSwitching then
@@ -1255,18 +1958,27 @@ end
     local trueColorRegions = {}
     drawBackdrop(layout)
     drawHeader(self, layout)
-    panelFrame(layout.party, false)
-    panelFrame(layout.box, false)
+    panelFrame(layout.box, LIGHT)
 
     local party = self.game.save.party
     local box = Boxes.active(self.game.save)
-    for index = 1, Party.MAX do
-      drawSlot(self, layout, "party", party, index, trueColorRegions)
+    local leftMon, rightMon = paneMons(self)
+    if leftPaneShowsDetails(self) and not layout.compact then
+      drawDataPane(self, layout.party, leftMon,
+        detailLocation(self, false), self.detailPage or 1,
+        trueColorRegions, false)
+    else
+      panelFrame(layout.party, LIGHT)
+      for index = 1, Party.MAX do
+        drawSlot(self, layout, "party", party, index, trueColorRegions)
+      end
     end
     for index = 1, Boxes.CAPACITY do
       drawSlot(self, layout, "box", box, index, trueColorRegions)
     end
-    drawDetails(self, layout, trueColorRegions)
+    drawDataPane(self, layout.detail, rightMon,
+      detailLocation(self, self.held ~= nil), self.detailPage or 1,
+      trueColorRegions, layout.compact)
     drawFooter(self, layout)
     drawActions(self, layout)
 
@@ -1276,7 +1988,7 @@ end
       modalCutout = { x = x, y = y, w = width + 2, h = height + 2 }
     end
     if not (type(useStockOgMenuPalette) == "function"
-        and useStockOgMenuPalette(game)) then
+        and useStockOgMenuPalette(self.game)) then
       for _, rect in ipairs(trueColorRegions) do
         markTrueColorOutside(rect, modalCutout)
       end
@@ -1299,55 +2011,70 @@ end
         colors = base, x = 0, y = 0, w = layout.width, h = SCREEN_H,
       }}
     end
-    local zones = {
-      { colors = base, x = 0, y = 0, w = layout.width, h = SCREEN_H },
-    }
-    local header = base
-    local partyPal = PaletteFX.pal(data, "GREENMON") or base
-    local boxPal = PaletteFX.pal(data, "CYANMON") or base
+    local zones = {{
+      colors = base, x = 0, y = 0, w = layout.width, h = SCREEN_H,
+    }}
+    local paper = type(menuPaper) == "function" and menuPaper(game) or nil
+    paper = paper or base
+    local dataPaper = lockedDataPaper(game) or paper
     zones[#zones + 1] = {
-      colors = header, x = 0, y = 0, w = layout.width, h = HEADER_H,
+      colors = base, x = 0, y = 0, w = layout.width, h = HEADER_H,
     }
-    zones[#zones + 1] = {
-      colors = partyPal, x = layout.party.x, y = layout.party.y,
-      w = layout.party.w, h = layout.party.h,
-    }
-    zones[#zones + 1] = {
-      colors = boxPal, x = layout.box.x, y = layout.box.y,
-      w = layout.box.w, h = layout.box.h,
-    }
+    roundedPaletteFrame(zones, base, base, layout.box, 2)
 
     local party = self.game.save.party
     local box = Boxes.active(self.game.save)
-    for index, mon in ipairs(party) do
-      local rect = slotRect(layout, "party", index)
-      zones[#zones + 1] = {
-        colors = monPalette(self, mon), x = rect.x, y = rect.y,
-        w = rect.w, h = rect.h,
-      }
+    local leftMon, detailMon = paneMons(self)
+    if leftPaneShowsDetails(self) and not layout.compact then
+      local leftBorder = leftMon and ownedTypePalette(self, leftMon) or base
+      roundedPaletteFrame(zones, leftBorder, dataPaper, layout.party, 2)
+      if leftMon and (self.detailPage or 1) <= 4 then
+        local def = self.game.data.pokemon[leftMon.species] or {}
+        for _, badge in ipairs(detailTypeBadges(
+            layout.party, def.types or {}, genderWidth(leftMon) > 0)) do
+          roundedPaletteFrame(zones, badge.palette, dataPaper, badge.rect, 1)
+        end
+      end
+    else
+      roundedPaletteFrame(zones, base, base, layout.party, 2)
+      for index = 1, Party.MAX do
+        local mon = party[index]
+        local rect = slotRect(layout, "party", index)
+        if mon then
+          local border = ownedTypePalette(self, mon)
+          roundedPaletteFrame(zones, border, dataPaper, rect, 1)
+        else
+          local inset = { x = rect.x + 2, y = rect.y + 2,
+            w = rect.w - 4, h = rect.h - 4 }
+          roundedPaletteFrame(zones, base, dataPaper, inset, 1)
+        end
+      end
     end
-    for index, mon in ipairs(box) do
+    for index = 1, Boxes.CAPACITY do
+      local mon = box[index]
       local rect = slotRect(layout, "box", index)
-      zones[#zones + 1] = {
-        colors = monPalette(self, mon), x = rect.x, y = rect.y,
-        w = rect.w, h = rect.h,
-      }
+      if mon then
+        local border = ownedTypePalette(self, mon)
+        roundedPaletteFrame(zones, border,
+          paper, rect, 1)
+      else
+        local inset = { x = rect.x + 2, y = rect.y + 2,
+          w = rect.w - 4, h = rect.h - 4 }
+        roundedPaletteFrame(zones, base, paper, inset, 1)
+      end
     end
-    local detailMon = self.held and self.held.mon or selected(self)
-    if detailMon then
-      zones[#zones + 1] = {
-        colors = monPalette(self, detailMon),
-        x = layout.detail.x, y = layout.detail.y,
-        w = layout.detail.w, h = layout.detail.h,
-      }
+    local detailBorder = detailMon and ownedTypePalette(self, detailMon) or base
+    roundedPaletteFrame(zones, detailBorder, dataPaper, layout.detail, 2)
+    if detailMon and (self.detailPage or 1) <= 4 then
+      local def = self.game.data.pokemon[detailMon.species] or {}
+      local hasGender = genderWidth(detailMon) > 0
+      for _, badge in ipairs(detailTypeBadges(
+          layout.detail, def.types or {}, hasGender)) do
+        roundedPaletteFrame(zones, badge.palette, dataPaper, badge.rect, 1)
+      end
     end
-    local selectedPal = PaletteFX.pal(data, "YELLOWMON") or header
-    local rect = slotRect(layout, self.region, currentIndex(self))
     zones[#zones + 1] = {
-      colors = selectedPal, x = rect.x, y = rect.y, w = rect.w, h = rect.h,
-    }
-    zones[#zones + 1] = {
-      colors = header, x = 0, y = FOOTER_Y, w = layout.width, h = 9,
+      colors = base, x = 0, y = FOOTER_Y, w = layout.width, h = 9,
     }
     if self.actions then
       local x, y, width, height = actionGeometry(self, layout)
@@ -1403,12 +2130,16 @@ end
           game.partyMenuSavedIndex or 1)),
         boxIndex = 1,
         blink = 0,
+        selectorBlinkElapsed = 0,
         held = nil,
         boxSwitching = false,
         boxSwitchReturnRegion = nil,
         actions = nil,
         actionIndex = 1,
         status = nil,
+        detailPage = 1,
+        leftPaneMode = "party",
+        leftPaneManual = false,
         modernPCUI = true,
         modernPCLayout = "party-and-box",
         holdsUIAnchors = true,
