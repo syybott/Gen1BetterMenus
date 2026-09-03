@@ -6,7 +6,7 @@
 -- that controller instead of duplicating it. Only the visible list, drawing,
 -- left/right pocket navigation and filtered-list reordering live here.
 return function(mod, compatibility, menuColors, useStockOgMenuPalette,
-    menuPaperPalette)
+    menuPaperPalette, rawPaletteCopy)
   compatibility = compatibility or {}
   local BagMenu = require("src.ui.BagMenu")
   local Bag = require("src.inventory.Bag")
@@ -2026,7 +2026,6 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     all = "BLUEMON", items = "BROWNMON", medicine = "GREENMON",
     balls = "REDMON", machines = "PURPLEMON", key = "CYANMON",
   }
-
   local function selectedMenuPalette(game)
     local selected = type(menuColors) == "function" and menuColors() or nil
     local data = game and game.data
@@ -2034,7 +2033,39 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
       or (data and PaletteFX.pal(data, "BLUEMON"))
   end
 
+  local function paletteLuminance(color)
+    if type(color) ~= "table" then return -math.huge end
+    return (tonumber(color[1]) or 0) * 0.2126
+      + (tonumber(color[2]) or 0) * 0.7152
+      + (tonumber(color[3]) or 0) * 0.0722
+  end
+
+  -- Rebuild pane palette by brightness so inverse cannot move a light shade
+  -- into the text slot. We only require a stable paper shade and darkest ink.
+  local function lockedDataPaper(game)
+    local source = selectedMenuPalette(game)
+    local paper = type(menuPaperPalette) == "function"
+      and menuPaperPalette(game) or nil
+    if type(source) ~= "table" then return paper end
+    local shades = {}
+    for index = 1, 4 do
+      if type(source[index]) == "table" then shades[#shades + 1] = source[index] end
+    end
+    table.sort(shades, function(a, b)
+      return paletteLuminance(a) > paletteLuminance(b)
+    end)
+    if #shades < 4 then return paper or source end
+    local locked = {
+      paper and paper[1] or shades[1], shades[2], shades[3], shades[4],
+    }
+    return type(rawPaletteCopy) == "function" and rawPaletteCopy(locked) or locked
+  end
+
   local function roundedPaletteZones(zones, colors, x, y, width, height)
+    if type(rawPaletteCopy) == "function" and type(colors) == "table"
+        and not colors.gen1BetterMenusOwned then
+      colors = rawPaletteCopy(colors)
+    end
     zones[#zones + 1] = {
       colors = colors, x = x + 2, y = y, w = width - 4, h = height,
     }
@@ -2072,6 +2103,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     }}
     local paper = type(menuPaperPalette) == "function"
       and menuPaperPalette(game) or nil
+    local dataPaper = lockedDataPaper(game) or paper or base
     if paper then
       local pockets = pocketsFor(menu)
       local slotW = math.floor(layout.width / #pockets)
@@ -2099,6 +2131,9 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     end
     roundedPaletteZones(zones, base, layout.listX, layout.listY,
       layout.listW, layout.listH)
+    roundedPaletteZones(zones, dataPaper or paper or base,
+      layout.listX + 2, layout.listY + 2,
+      layout.listW - 4, layout.listH - 4)
 
     local pocket = pocketFor(menu)
     local config = listConfig(menu)
@@ -2109,7 +2144,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     if layout.showDetails then
       roundedPaletteZones(zones, base, layout.detailX, layout.detailY,
         layout.detailW, layout.detailH)
-      roundedPaletteZones(zones, paper or details,
+      roundedPaletteZones(zones, dataPaper or paper or details,
         layout.detailX + 2, layout.detailY + 2,
         layout.detailW - 4, layout.detailH - 4)
     end
@@ -2120,7 +2155,7 @@ return function(mod, compatibility, menuColors, useStockOgMenuPalette,
     for row = 1, visibleRows do
       local index = menu.scroll + row
       if not menu.items[index] then break end
-      local rowPalette = index == menu.index and base or paper
+      local rowPalette = index == menu.index and base or (dataPaper or paper)
       if rowPalette then
         roundedPaletteZones(zones, rowPalette,
           layout.listX + 4,

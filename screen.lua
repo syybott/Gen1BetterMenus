@@ -1762,7 +1762,7 @@ return function(mod, genderExports, compatibility, menuColors,
       if move and def then
         drawMediumCentered(def.name or move.id, panel.x + panel.w / 2,
           y, panel.w - 8, BLACK)
-        local detail = typeAbbreviation(def.type) .. " PP ("
+        local detail = typeAbbreviation(def.type) .. " ("
           .. tostring(move.pp or 0) .. "/" .. tostring(maxMovePP(move, def))
           .. ")"
         drawTinyCentered(detail, panel.x + panel.w / 2,

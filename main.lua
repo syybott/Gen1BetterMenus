@@ -316,78 +316,37 @@ local LOCATION_OVERLAY_KEY = "__qolLocationBannerOverlay"
 local locationStates = setmetatable({}, { __mode = "k" })
 local locationOverlays = setmetatable({}, { __mode = "k" })
 
-local OG_MENU_PALETTES = {
-  classic = true,
-  og = true,
-  ogred = true,
-  redpp = true,
-  gbc = true,
-}
-
-local OG_MENU_PALETTE_LABELS = {
-  classic = "CLASSIC",
-  og = "OG",
-  ogred = "OG RED",
-  redpp = "ADVANCED",
-  gbc = "SGB",
-}
-
-local function usesOgEnginePalette(game)
-  game = game or activeGame
-  if not game or not game.save or not game.save.options then
-    return false
-  end
-
-  local id = game.save.options.colors
-  return OG_MENU_PALETTES[id] == true
-end
-
-local function hasCustomGamePalette(game)
-  game = game or activeGame
-  local value = game and game.save and game.save.options
-    and game.save.options.palette
-  return type(value) == "string" and value ~= ""
-end
-
-local function menuPaletteForcedUnlocked(game)
-  return hasCustomGamePalette(game) or not usesOgEnginePalette(game)
-end
-
-local function menuPaletteUnlocked(game)
-  return menuPaletteForcedUnlocked(game)
-    or (activeMod
-      and activeMod.options:get("override_og_menu_palette") == true)
-end
-
-local function useStockOgMenuPalette(game)
-  if not activeMod then return false end
-  if menuPaletteUnlocked(game) then
-    return false
-  end
-  return usesOgEnginePalette(game)
-end
-
-local function overrideOgMenuPalette(game)
-  game = game or activeGame
-  if not activeMod
-      or activeMod.options:get("override_og_menu_palette") ~= true
-      or not game or not game.save or not game.save.options then
-    return false
-  end
-  return OG_MENU_PALETTES[game.save.options.colors] == true
-end
-
 -- PaletteFX normally applies the engine's active display mode after a state
--- supplies its zones. Under the explicit BetterMenus override, only cloned
--- Modern Bag/PC zone palettes bypass that final substitution.
+-- supplies its zones. Under BetterMenus ownership, BetterMenus-owned menu
+-- palettes bypass that final substitution and reach the shader directly.
 PaletteFX.gen1BetterMenusRawZonePalettes =
   PaletteFX.gen1BetterMenusRawZonePalettes
   or setmetatable({}, { __mode = "k" })
+
+local function isBetterMenusPalette(palette)
+  if type(palette) ~= "table" then return false end
+  return palette.gen1BetterMenusOwned == true
+    or PaletteFX.gen1BetterMenusRawZonePalettes[palette] == true
+end
+
+local function rawMenuPaletteCopy(source)
+  if type(source) ~= "table" then return source end
+  local clone = {
+    source[1] and { source[1][1], source[1][2], source[1][3] } or { 255, 255, 255 },
+    source[2] and { source[2][1], source[2][2], source[2][3] } or { 170, 170, 170 },
+    source[3] and { source[3][1], source[3][2], source[3][3] } or { 85, 85, 85 },
+    source[4] and { source[4][1], source[4][2], source[4][3] } or { 0, 0, 0 },
+  }
+  clone.gen1BetterMenusOwned = true
+  PaletteFX.gen1BetterMenusRawZonePalettes[clone] = true
+  return clone
+end
+
 if not PaletteFX.gen1BetterMenusRawZoneHookInstalled then
   local originalSendColors = PaletteFX.sendColors
   local originalEffectiveColors = PaletteFX.effectiveColors
   PaletteFX.sendColors = function(shader, palette)
-    if PaletteFX.gen1BetterMenusRawZonePalettes[palette] then
+    if isBetterMenusPalette(palette) then
       shader:send("c0", { palette[1][1] / 255,
         palette[1][2] / 255, palette[1][3] / 255 })
       shader:send("c1", { palette[2][1] / 255,
@@ -401,7 +360,7 @@ if not PaletteFX.gen1BetterMenusRawZoneHookInstalled then
     return originalSendColors(shader, palette)
   end
   PaletteFX.effectiveColors = function(palette, ...)
-    if PaletteFX.gen1BetterMenusRawZonePalettes[palette] then
+    if isBetterMenusPalette(palette) then
       return palette
     end
     return originalEffectiveColors(palette, ...)
@@ -409,55 +368,34 @@ if not PaletteFX.gen1BetterMenusRawZoneHookInstalled then
   PaletteFX.gen1BetterMenusRawZoneHookInstalled = true
 end
 
-local function rawMenuPaletteCopy(source)
-  local clone = {}
-  for i, color in ipairs(source or {}) do
-    clone[i] = type(color) == "table"
-      and { color[1], color[2], color[3] } or color
-  end
-  PaletteFX.gen1BetterMenusRawZonePalettes[clone] = true
-  return clone
+local function useStockOgMenuPalette(game)
+  return false
 end
 
 local function bypassOgTransformForZones(zones)
   for _, zone in ipairs(zones or {}) do
     local source = zone and zone.colors
-    if type(source) == "table" then
+    if type(source) == "table" and not isBetterMenusPalette(source) then
       zone.colors = rawMenuPaletteCopy(source)
     end
   end
   return zones
 end
 
-local function lockedOgMenuPaletteLabel(game)
-  game = game or activeGame
-  local id = game and game.save and game.save.options
-    and game.save.options.colors
-  return (OG_MENU_PALETTE_LABELS[id] or tostring(id or "OG"))
-    .. " (LOCKED)"
-end
-
 -- Rendering contract:
--- 1. Menu geometry is identical in NORMAL and INVERSE.
--- 2. colors() always returns canonical palette order.
--- 3. INVERSE is applied once by effectiveMenuPalette().
--- 4. Semantic HP/XP colors are excluded from menu-palette remapping unless
---    an OG engine palette is active, in which case that engine pass owns them.
--- 5. Renderers must never reverse or un-reverse palettes themselves.
+-- 1. When a BetterMenus menu palette is enabled, BetterMenus owns the palette used to render BetterMenus menu UI.
+-- 2. Upstream may continue to own overworld/game palettes and any screens BetterMenus does not override.
+-- 3. Global upstream palette settings such as inverse must not silently replace or reorder BetterMenus menu palette ownership.
+-- 4. Menu geometry is identical in NORMAL and INVERSE.
+-- 5. colors() always returns canonical palette order.
+-- 6. INVERSE is applied once by effectiveMenuPalette().
+-- 7. Semantic HP/XP colors are excluded from menu-palette remapping unless an OG engine palette is active.
+-- 8. Renderers must never reverse or un-reverse palettes themselves.
 
 local function colors(game)
-  game = game or activeGame
-  if useStockOgMenuPalette(game) then
-    local id = game.save.options.colors
-    local stock = PALETTES[id]
-    if stock then return stock end
-  end
   local id = activeMod and activeMod.options:get("palette") or "soulsilver"
   local palette = PALETTES[id] or PALETTES.soulsilver
-  if overrideOgMenuPalette(game) then
-    return rawMenuPaletteCopy(palette)
-  end
-  return palette
+  return rawMenuPaletteCopy(palette)
 end
 
 local function effectiveMenuPalette(game)
@@ -465,15 +403,13 @@ local function effectiveMenuPalette(game)
   if not (activeMod and activeMod.options:get("inverse")) then
     return palette
   end
-  local resolved = PaletteFX.effectiveColors(palette) or palette
   local inverse = {
-    resolved[4], resolved[3], resolved[2], resolved[1],
+    palette[4], palette[3], palette[2], palette[1],
   }
   return rawMenuPaletteCopy(inverse)
 end
 
 local function effectivePaperPalette(game)
-  if useStockOgMenuPalette(game) then return nil end
   local palette = effectiveMenuPalette(game)
   local id = activeMod and activeMod.options:get("palette") or "soulsilver"
   local paper = PAPER_COLORS[id]
@@ -2863,54 +2799,6 @@ return function(mod, menuColors)
     installQolBattleStackGate(event and event.game)
   end)
 
-  -- The Mod Manager builds its rows from the static option schema. Decorate
-  -- BetterMenus-owned rows whose availability depends on live game state.
-  ManagerState.gen1BetterMenusOgPaletteControl = {
-    locked = useStockOgMenuPalette,
-    label = lockedOgMenuPaletteLabel,
-    forcedUnlocked = menuPaletteForcedUnlocked,
-  }
-  if not ManagerState.gen1BetterMenusOgPaletteRowsInstalled then
-    local originalBuildOptionRows = ManagerState.buildOptionRows
-    ManagerState.buildOptionRows = function(self, entry, schema)
-      local rows = originalBuildOptionRows(self, entry, schema)
-      if entry and entry.id == "gen1-better-menus" then
-        local control = ManagerState.gen1BetterMenusOgPaletteControl
-        for _, row in ipairs(rows or {}) do
-          if row.id == "palette" then
-            local normalValue, normalStep = row.value, row.step
-            row.value = function(game)
-              game = game or self.game
-              if control and control.locked(game) then
-                return control.label(game)
-              end
-              return normalValue and normalValue(game) or "----"
-            end
-            row.step = function(game, dir)
-              game = game or self.game
-              if control and control.locked(game) then return true end
-              return normalStep and normalStep(game, dir) or false
-            end
-          elseif row.id == "override_og_menu_palette" then
-            local normalValue, normalStep = row.value, row.step
-            row.value = function(game)
-              game = game or self.game
-              if control and control.forcedUnlocked(game) then return "ON" end
-              return normalValue and normalValue(game) or "ON"
-            end
-            row.step = function(game, dir)
-              game = game or self.game
-              if control and control.forcedUnlocked(game) then return true end
-              return normalStep and normalStep(game, dir) or false
-            end
-          end
-        end
-      end
-      return rows
-    end
-    ManagerState.gen1BetterMenusOgPaletteRowsInstalled = true
-  end
-  
     local genderMod = mod.find("gender_mod")
   local genderExports = genderMod and genderMod.exports or nil
 
@@ -3027,7 +2915,7 @@ return function(mod, menuColors)
     }
     local okBagScreen, modernBagScreen = pcall(
       makeBagScreen, mod, bagCompatibility, effectiveMenuPalette,
-      useStockOgMenuPalette, effectivePaperPalette)
+      useStockOgMenuPalette, effectivePaperPalette, rawMenuPaletteCopy)
     local okBagInventory, modernBagInventory = false, nil
     if okBagScreen and type(modernBagScreen) == "table"
         and type(modernBagScreen.new) == "function" then
@@ -3165,8 +3053,6 @@ return function(mod, menuColors)
       } },
     { key = "inverse", label = "Inverse", type = "toggle",
       default = false },
-	{ key = "override_og_menu_palette", label = "Unlock Menu Palette", type = "toggle",
-	  default = true },
     { key = "modern_pc_ui", label = "Modern PC UI", type = "toggle",
       default = false },
     { key = "modern_bag_ui", label = "Modern Bag UI", type = "toggle",
@@ -3649,25 +3535,11 @@ return function(mod, menuColors)
   end
 
   local function betterMenusState(game, reopenStart)
-    local rows = {
-      {
-        label = "Unlock Menu Palette",
-        value = function(g) return menuPaletteUnlocked(g) and "ON" or "OFF" end,
-        widthValues = { "ON", "OFF" },
-        step = function(g)
-          if menuPaletteForcedUnlocked(g) then return true end
-          setOption(g, "override_og_menu_palette",
-            not activeMod.options:get("override_og_menu_palette"))
-          return true
-        end,
-        description = "Keep this off if you want the menu palette to follow your selected OG game palette, such as Game Boy or Black and White OR turn it on to choose any menu palette you want",
-      },
-    }
+    local rows = {}
     local function addGroup(label, choices)
       rows[#rows + 1] = {
         label = label,
         activate = function(g)
-          if not menuPaletteUnlocked(g) then return end
           local parent = g.stack:top()
           g.stack:push(menuPaletteBrowser(g, parent, choices))
         end,
@@ -4105,39 +3977,15 @@ end
     local states = game and game.stack and game.stack.states or {}
     local stack = game and game.stack
     local first = stack and stack.visibleBase and stack:visibleBase() or 1
-    local overrideModernPalette = false
-    if overrideOgMenuPalette(game) then
-      for i = first, #states do
-        local state = states[i]
-        if state and (state.modernBagUI or state.modernPCUI) then
-          overrideModernPalette = true
-          break
-        end
-      end
-    end
-    local function finished(result)
-      if overrideModernPalette then
-        return bypassOgTransformForZones(result)
-      end
-      return result
-    end
     for i = first, #states do
       if states[i] and states[i].modernBagUI then
-        return finished(out)
+        return out
       end
     end
 
     if mt == BattleState and top.wideLayout and top:wideLayout() then
       local battleMode = modernBattleUIMode()
       if battleMode ~= "mod" then
-      -- A locked OG engine palette already owns the complete wide surface.
-      -- Adding panel zones on top transforms the arena beneath transparent
-      -- HUD interiors a second time, leaving large opaque rectangles. Keep
-      -- the panel zones only for the normal BetterMenus palette path and for
-      -- the explicit BetterMenus inverse treatment.
-      local ogInverse = useStockOgMenuPalette(game) and activeMod
-        and activeMod.options:get("inverse") == true
-      if not useStockOgMenuPalette(game) or ogInverse then
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 0, 15, 3)
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 23, 7, 37, 12)
         out[#out + 1] = battleUIZone(effectiveMenuPalette(), 0, 13, 37, 17)
@@ -4162,7 +4010,6 @@ end
       end
       -- ON preserves only semantic meter fills. OFF restores each complete
       -- stock HP element (label, track, and fill) after palette treatment.
-      end
     else
       local title
       for i = 1, #states do
@@ -4207,6 +4054,6 @@ end
         out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), 0, 14, 19, 17)
       end
     end
-    return finished(out)
+    return out
   end)
 end
