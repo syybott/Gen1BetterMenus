@@ -1911,6 +1911,98 @@ local function installSupportingScreens()
     end
   end
 
+  local inkShader
+  local function shaderForInk()
+    if inkShader == nil then
+      if not love.graphics.newShader then
+        inkShader = false
+      else
+        local ok, shader = pcall(love.graphics.newShader, [[
+          vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+            vec4 pixel = Texel(tex, tc);
+            return vec4(color.rgb, pixel.a * color.a);
+          }
+        ]])
+        inkShader = ok and shader or false
+      end
+    end
+    return inkShader or nil
+  end
+
+  local function paneBackgroundColor(game)
+    local menuPal = effectiveMenuPalette(game)
+    if menuPal and menuPal[1] then
+      local c = PaletteFX.effectiveColors(menuPal) or menuPal
+      return { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255, 1 }
+    end
+    return { 1, 1, 1, 1 }
+  end
+
+  local function paneInkColor(game)
+    local menuPal = effectiveMenuPalette(game)
+    if menuPal and menuPal[4] then
+      local c = PaletteFX.effectiveColors(menuPal) or menuPal
+      return { c[4][1] / 255, c[4][2] / 255, c[4][3] / 255, 1 }
+    end
+    return { 0, 0, 0, 1 }
+  end
+
+  local function getGenderModApi(game)
+    local handle = (activeMod and activeMod.find and activeMod.find("gender_mod"))
+      or (game and game.mods and game.mods.find and game.mods:find("gender_mod"))
+    if handle and handle.exports then return handle.exports end
+    local exports = (game and game.mods and game.mods.exports)
+      or (Runtime and Runtime.mods and Runtime.mods.exports)
+    return exports and exports["gender_mod"]
+  end
+
+  local function drawNamingGender(game, mon, localX, localY, shiftX)
+    local api = getGenderModApi(game)
+    if not api or type(api.genderOf) ~= "function" then return end
+    if not (mon and type(mon) == "table" and mon.species) then return end
+    local okGender, gender = pcall(api.genderOf, mon)
+    if not okGender then return end
+
+    local state = api.state and api.state(gender) or (type(gender) == "table" and gender.state or gender)
+    local okSymbol, symbol = pcall(api.symbol or function(g)
+      return g == "M" and "♂" or g == "F" and "♀" or "⚲"
+    end, gender)
+    if not okSymbol or type(symbol) ~= "string" or symbol == "" then return end
+
+    local x, y = math.floor(localX), math.floor(localY)
+
+    if state ~= "M" and state ~= "F" then
+      love.graphics.push("all")
+      love.graphics.setColor(0, 0, 0, 1)
+      Font.draw(symbol, x, y)
+      love.graphics.pop()
+      return
+    end
+
+    local color = state == "M" and { 32 / 255, 104 / 255, 224 / 255, 1 }
+      or { 248 / 255, 72 / 255, 152 / 255, 1 }
+    if type(api.palette) == "function" then
+      local okPalette, exported = pcall(api.palette, gender)
+      if okPalette and type(exported) == "table" then color = exported end
+    end
+
+    -- Match the white background of the nickname screen
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", x - 1, y - 1, 10, 10)
+
+    love.graphics.push("all")
+    local shader = shaderForInk()
+    if shader then love.graphics.setShader(shader) end
+    love.graphics.setColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+    Font.draw(symbol, x, y)
+    love.graphics.pop()
+
+    local okP, PaletteFX = pcall(require, "src.render.PaletteFX")
+    if okP and PaletteFX and PaletteFX.markTrueColor then
+      PaletteFX.markTrueColor(x + (shiftX or 0), y, 8, 8)
+    end
+  end
+
   local originalNamingNew = NamingScreen.new
   NamingScreen.new = function(game, opts)
     local self = originalNamingNew(game, opts)
@@ -1923,7 +2015,36 @@ local function installSupportingScreens()
         if w and w > Renderer.WIDTH then wideBattle = true break end
       end
     end
-    if wideBattle or self.mon then
+    if opts and opts.mon then
+      self.mon = opts.mon
+    end
+
+    -- nickname_changer pushes NamingScreen from the party submenu (overworld
+    -- only; it guards against the battle context itself).  BetterMenus detects
+    -- this by the mod being present and the screen carrying the changer's
+    -- specific title so we don't accidentally capture unrelated naming screens.
+    local fromNicknameChanger = false
+    if not wideBattle and not introNaming then
+      local hasChanger = (activeMod and activeMod.find and activeMod.find("nickname_changer"))
+        or (game and game.mods and game.mods.find and game.mods:find("nickname_changer"))
+      if (hasChanger or (opts and opts.mon)) and opts and tostring(opts.title or ""):upper() == "NEW NICKNAME?" then
+        fromNicknameChanger = true
+        if not self.mon then
+          for _, state in ipairs(game and game.stack and game.stack.states or {}) do
+            local party = state.party or (state.game and state.game.save and state.game.save.party) or (game and game.save and game.save.party)
+            if party and state.index and party[state.index] then
+              self.mon = party[state.index]
+              break
+            end
+          end
+        end
+        if not self.mon and game and game.save and game.save.party then
+          local idx = game.partyMenuSavedIndex or 1
+          self.mon = game.save.party[idx]
+        end
+      end
+    end
+    if wideBattle or self.mon or fromNicknameChanger then
       self.gen1BetterMenusSolidNickname = true
       self.uiSize = function() return UI_W, UI_H end
       self.isWideBattleLayout = function() return true end
@@ -1967,6 +2088,22 @@ local function installSupportingScreens()
 
         -- 2. Lower-left Pokémon battle front sprite
         local mon = screen.mon or self.mon
+        if not mon and opts and opts.mon then
+          mon = opts.mon
+        end
+        if not mon and game and game.save and game.save.party then
+          for _, state in ipairs(game.stack and game.stack.states or {}) do
+            local party = state.party or (state.game and state.game.save and state.game.save.party) or game.save.party
+            if party and state.index and party[state.index] then
+              mon = party[state.index]
+              break
+            end
+          end
+          if not mon then
+            local idx = game.partyMenuSavedIndex or 1
+            mon = game.save.party[idx]
+          end
+        end
         if mon then
           local Assets = require("src.render.Assets")
           local Sprites = require("src.pokemon.Sprites")
@@ -1974,7 +2111,7 @@ local function installSupportingScreens()
           local ok, img = pcall(Assets.image, path)
           if ok and img then
             local sw, sh = img:getDimensions()
-            local sx = 21
+            local sx = -3
             local sy = 101
             if not trueColor then
               local monPal = PaletteFX.monPal(game.data, mon.species)
@@ -1992,14 +2129,18 @@ local function installSupportingScreens()
             end
             PaletteFX.markTrueColor(sx + math.floor((UI_W - Renderer.WIDTH) / 2), sy, sw, sh)
           else
-            PartyMenu.drawIcon(game, mon, 21, 101, false, 0)
+            PartyMenu.drawIcon(game, mon, -3, 101, false, 0)
           end
 
-          -- 3. Species name to the right of sprite
-          local def = game.data.pokemon and game.data.pokemon[mon.species]
-          local name = def and def.name or mon.species or ""
-          love.graphics.setColor(0, 0, 0, 1)
-          Font.draw(name, 67, 104)
+          -- 3. Species name to the right of sprite (only when catching in battle, not when renaming)
+          local titleStr = tostring(screen.title or "NICKNAME?"):upper()
+          if not titleStr:find("NEW", 1, true) then
+            local def = game.data.pokemon and game.data.pokemon[mon.species]
+            local name = def and def.name or mon.species or ""
+            love.graphics.setColor(0, 0, 0, 1)
+            Font.draw(name, 55, 104)
+            drawNamingGender(game, mon, 55 + Font.width(name) + 2, 104, math.floor((UI_W - Renderer.WIDTH) / 2))
+          end
         end
 
         -- 4. NICKNAME? below species name with '?' moved up by 1 pixel
@@ -2007,15 +2148,15 @@ local function installSupportingScreens()
         local title = screen.title or "NICKNAME?"
         if title:sub(-1) == "?" then
           local prefix = title:sub(1, #title - 1)
-          Font.draw(prefix, 67, 115)
-          Font.draw("?", 67 + Font.width(prefix), 114)
+          Font.draw(prefix, 55, 115)
+          Font.draw("?", 55 + Font.width(prefix), 114)
         else
-          Font.draw(title, 67, 115)
+          Font.draw(title, 55, 115)
         end
 
         -- 5. Nickname entry line shifted right by approx 20px
         local maxLen = screen.maxLen or 10
-        local slotStartX = math.floor((160 - maxLen * 8) / 2) + 26
+        local slotStartX = math.floor((160 - maxLen * 8) / 2) + 14
         for i = 1, maxLen do
           Font.draw(screen.glyphs[i] or "-", slotStartX + (i - 1) * 8, 132)
         end
@@ -2023,6 +2164,15 @@ local function installSupportingScreens()
 
         love.graphics.pop()
         clearWideBattleHudTrueColor()
+      end
+      self._gen1BetterMenusWideDraw = self.draw
+
+      local originalEnter = self.enter
+      self.enter = function(screen, ...)
+        if originalEnter then originalEnter(screen, ...) end
+        if screen.gen1BetterMenusSolidNickname and screen._gen1BetterMenusWideDraw then
+          screen.draw = screen._gen1BetterMenusWideDraw
+        end
       end
     elseif introNaming then
       -- Oak's held dialogue remains below this screen and would otherwise
@@ -2117,58 +2267,48 @@ local function installSupportingScreens()
     add(ix2, iy1, x2 - ix2, iy2 - iy1)
   end
 
-  local inkShader
-  local function shaderForInk()
-    if inkShader == nil then
-      if not love.graphics.newShader then
-        inkShader = false
-      else
-        local ok, shader = pcall(love.graphics.newShader, [[
-          vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-            vec4 pixel = Texel(tex, tc);
-            return vec4(color.rgb, pixel.a * color.a);
-          }
-        ]])
-        inkShader = ok and shader or false
-      end
-    end
-    return inkShader or nil
-  end
 
-  local function paneBackgroundColor(game)
-    local menuPal = effectiveMenuPalette(game)
-    if menuPal and menuPal[1] then
-      local c = PaletteFX.effectiveColors(menuPal) or menuPal
-      return { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255, 1 }
-    end
-    return { 1, 1, 1, 1 }
-  end
 
-  local function getGenderModApi(game)
-    local handle = (activeMod and activeMod.find and activeMod.find("gender_mod"))
-      or (game and game.mods and game.mods.find and game.mods:find("gender_mod"))
-    if handle and handle.exports then return handle.exports end
-    local exports = (game and game.mods and game.mods.exports)
-      or (Runtime and Runtime.mods and Runtime.mods.exports)
-    return exports and exports["gender_mod"]
+  -- Maximum number of Pokémon action submenu entries shown at once.
+  -- When other mods add entries (HM Anywhere, Move Relearn, etc.) the total
+  -- can exceed what the stock box geometry can fit on screen.  BetterMenus
+  -- caps the visible window to this many rows and scrolls as the cursor moves.
+  local SUBMENU_PAGE = 6
+
+  -- Returns the 0-based scroll offset stored on the menu instance, clamped to
+  -- a valid range for the current item count.
+  local function subScrollFor(menu)
+    local total  = menu.subItems and #menu.subItems or 0
+    local maxScr = math.max(0, total - SUBMENU_PAGE)
+    local raw    = menu.gen1BetterMenusSubScroll or 0
+    return math.max(0, math.min(raw, maxScr))
   end
 
   local function drawPartyGender(game, mon, x, y, menu)
     local api = getGenderModApi(game)
     if not api or type(api.genderOf) ~= "function" then return end
+    if not (mon and type(mon) == "table" and mon.species) then return end
     local okGender, gender = pcall(api.genderOf, mon)
-    if not okGender or not gender then return end
+    if not okGender then return end
 
     local state = api.state and api.state(gender) or (type(gender) == "table" and gender.state or gender)
-    local color = { 0, 0, 0, 1 }
-    if type(api.palette) == "function" then
-      local okPalette, exported = pcall(api.palette, gender)
-      if okPalette and type(exported) == "table" then color = exported end
-    elseif state == "M" then
+    local color
+    if state == "M" then
       color = { 32 / 255, 104 / 255, 224 / 255, 1 }
     elseif state == "F" then
       color = { 248 / 255, 72 / 255, 152 / 255, 1 }
+    else
+      color = paneInkColor(game)
     end
+    if (state == "M" or state == "F") and type(api.palette) == "function" then
+      local okPalette, exported = pcall(api.palette, gender)
+      if okPalette and type(exported) == "table" then color = exported end
+    end
+
+    local okSymbol, symbol = pcall(api.symbol or function(g)
+      return g == "M" and "♂" or g == "F" and "♀" or "⚲"
+    end, gender)
+    if not okSymbol or type(symbol) ~= "string" or symbol == "" then return end
 
     local bg = paneBackgroundColor(game)
     x, y = math.floor(x), math.floor(y)
@@ -2176,17 +2316,12 @@ local function installSupportingScreens()
     love.graphics.setColor(bg[1], bg[2], bg[3], 1)
     love.graphics.rectangle("fill", x, y, 8, 8)
 
-    local okSymbol, symbol = pcall(api.symbol or function(g)
-      return g == "M" and "♂" or g == "F" and "♀" or "⚲"
-    end, gender)
-    if okSymbol and type(symbol) == "string" and symbol ~= "" then
-      love.graphics.push("all")
-      local shader = shaderForInk()
-      if shader then love.graphics.setShader(shader) end
-      love.graphics.setColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
-      Font.draw(symbol, x, y)
-      love.graphics.pop()
-    end
+    love.graphics.push("all")
+    local shader = shaderForInk()
+    if shader then love.graphics.setShader(shader) end
+    love.graphics.setColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+    Font.draw(symbol, x, y)
+    love.graphics.pop()
 
     local top = game and game.stack and game.stack:top()
     local skipTrueColor = false
@@ -2200,7 +2335,7 @@ local function installSupportingScreens()
     end
 
     if menu and menu.submenu then
-      local n = #(menu.subItems or {})
+      local n = math.min(#(menu.subItems or {}), SUBMENU_PAGE)
       local smX = (UI_TW - 11) * 8
       local smY = (17 - n * 2 - 1) * 8
       local smW = 11 * 8
@@ -2226,11 +2361,54 @@ local function installSupportingScreens()
   end
 
   makeWideState(PartyMenu)
+
+  local originalPartyMenuUpdate = PartyMenu.update
+  -- Override navigation only when the submenu is open with more entries than
+  -- the visible window can show.  For ≤ SUBMENU_PAGE items every keystroke
+  -- falls through to the engine's original handler unchanged.
+  PartyMenu.update = function(self, dt)
+    if self.submenu and self.subItems and #self.subItems > SUBMENU_PAGE then
+      local n     = #self.subItems
+      local input = self.game and self.game.input
+      if input then
+        if input:wasPressed("down") then
+          -- Advance cursor with wrap: last → first
+          self.subIndex = self.subIndex % n + 1
+          local scroll  = subScrollFor(self)
+          if self.subIndex == 1 then
+            -- Wrapped from bottom to top: snap window to top
+            self.gen1BetterMenusSubScroll = 0
+          elseif self.subIndex > scroll + SUBMENU_PAGE then
+            -- Cursor moved past the bottom of the window: scroll down one
+            self.gen1BetterMenusSubScroll = self.subIndex - SUBMENU_PAGE
+          end
+          return
+        elseif input:wasPressed("up") then
+          -- Retreat cursor with wrap: first → last
+          self.subIndex = (self.subIndex - 2) % n + 1
+          local scroll  = subScrollFor(self)
+          if self.subIndex == n then
+            -- Wrapped from top to bottom: snap window to bottom
+            self.gen1BetterMenusSubScroll = n - SUBMENU_PAGE
+          elseif self.subIndex <= scroll then
+            -- Cursor moved past the top of the window: scroll up one
+            self.gen1BetterMenusSubScroll = self.subIndex - 1
+          end
+          return
+        end
+      end
+      -- A, B, START, or anything else: let the engine act on subIndex normally
+      return originalPartyMenuUpdate(self, dt)
+    end
+    -- Normal path (no submenu, or ≤ SUBMENU_PAGE items): engine handles everything
+    return originalPartyMenuUpdate(self, dt)
+  end
+
   PartyMenu.sgbPalettes = function(self, game)
     local zones = wholeWide()
     local submenuCutout
     if self.submenu then
-      local n = #self.subItems
+      local n = math.min(#self.subItems, SUBMENU_PAGE)
       submenuCutout = {
         x = (UI_TW - 11) * 8,
         y = (17 - n * 2 - 1) * 8,
@@ -2351,15 +2529,51 @@ local function installSupportingScreens()
     end
 
     if self.submenu then
-      local n = #self.subItems
-      local tx = UI_TW - 11
-      Font.drawBox(tx, 17 - n * 2 - 1, 11, n * 2 + 1)
-      local y0 = (17 - n * 2) * 8
-      for si, entry in ipairs(self.subItems) do
-        Font.draw(entry.label, (tx + 2) * 8, y0 + (si - 1) * 16)
+      local total   = #self.subItems
+      local visible = math.min(total, SUBMENU_PAGE)
+      local scroll  = subScrollFor(self)          -- 0-based first visible index
+      local tx      = UI_TW - 11
+
+      -- Box height is fixed to the visible window; its top edge stays constant.
+      Font.drawBox(tx, 17 - visible * 2 - 1, 11, visible * 2 + 1)
+      local y0 = (17 - visible * 2) * 8
+
+      -- Draw only the entries in the current scroll window.
+      for slot = 1, visible do
+        local entry = self.subItems[scroll + slot]
+        if entry then
+          Font.draw(entry.label, (tx + 2) * 8, y0 + (slot - 1) * 16)
+        end
       end
-      Font.drawCode(Theme.cursor, (tx + 1) * 8,
-                    y0 + (self.subIndex - 1) * 16)
+
+      -- Draw the cursor at its position within the visible window.
+      local cursorSlot = self.subIndex - scroll
+      Font.drawCode(Theme.cursor, (tx + 1) * 8, y0 + (cursorSlot - 1) * 16)
+
+      -- Scroll indicators when the list is taller than the window.
+      if total > SUBMENU_PAGE then
+        if scroll > 0 then
+          -- "More above" arrow: draw a small upward chevron (▲ pixels) manually
+          -- because not all theme builds expose a moreArrowUp glyph.
+          if Theme.moreArrowUp then
+            Font.drawCode(Theme.moreArrowUp, (tx + 9) * 8, y0 - 5)
+          else
+            local ax = (tx + 9) * 8 + 1
+            love.graphics.setColor(0, 0, 0, 1)
+            love.graphics.rectangle("fill", ax + 2, y0 - 1, 1, 1)
+            love.graphics.rectangle("fill", ax + 1, y0,     3, 1)
+            love.graphics.rectangle("fill", ax,     y0 + 1, 5, 1)
+          end
+        end
+        if scroll + SUBMENU_PAGE < total then
+          local dy = y0 + visible * 16 - 10
+          local ax = (tx + 9) * 8 + 1
+          love.graphics.setColor(0, 0, 0, 1)
+          love.graphics.rectangle("fill", ax,     dy,     5, 1)
+          love.graphics.rectangle("fill", ax + 1, dy + 1, 3, 1)
+          love.graphics.rectangle("fill", ax + 2, dy + 2, 1, 1)
+        end
+      end
     end
     drawFrameOnly(0, 0, UI_TW, UI_TH)
     love.graphics.setColor(1, 1, 1, 1)
@@ -2378,11 +2592,16 @@ local function installSupportingScreens()
       local w, h = parent:uiSize()
       if w and w > Renderer.WIDTH then
         self.uiSize = function() return w, h end
+        self.isWideBattleLayout = function() return true end
         self.gen1BetterMenusWide = true
       end
     end
 
     return self
+  end
+
+  StatBox.isWideBattleLayout = function(self)
+    return self and self.gen1BetterMenusWide or false
   end
 
   StatBox.draw = function(self)
@@ -2876,6 +3095,23 @@ return function(mod, menuColors)
     mod.content.screens:override("SummaryMenu", summaryMenuWrapper)
   else
     mod.content.screens:register("SummaryMenu", summaryMenuWrapper)
+  end
+
+  local originalNamingScreen = mod.content.screens:get("NamingScreen")
+  local namingScreenWrapper = {
+    new = function(game, opts)
+      local screen = originalNamingScreen and originalNamingScreen.new(game, opts)
+        or NamingScreen.new(game, opts)
+      if screen and screen.gen1BetterMenusSolidNickname and screen._gen1BetterMenusWideDraw then
+        screen.draw = screen._gen1BetterMenusWideDraw
+      end
+      return screen
+    end
+  }
+  if originalNamingScreen then
+    mod.content.screens:override("NamingScreen", namingScreenWrapper)
+  else
+    mod.content.screens:register("NamingScreen", namingScreenWrapper)
   end
 
   -- Modern Bag UI is vendored under BetterMenus-owned filenames. Preserve
