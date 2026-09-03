@@ -1,4 +1,4 @@
--- Gen1BetterMenus 1.1.1
+-- Gen1BetterMenus 1.1.2
 
 local Font = require("src.render.Font")
 local PaletteFX = require("src.render.PaletteFX")
@@ -1715,16 +1715,68 @@ local function installDialogueLayout()
     end
   end
 
+  local function createPCLoginTransition(game, onDone)
+    local tw, th = 18, 3
+    local tx = math.floor((UI_TW - tw) / 2)
+    local ty = math.floor((UI_TH - th) / 2)
+    local state = {
+      game = game,
+      onDone = onDone,
+      elapsed = 0,
+      finished = false,
+      isOpaque = false,
+      holdsUIAnchors = true,
+      isPCLoginTransition = true,
+      tx = tx,
+      ty = ty,
+      tw = tw,
+      th = th,
+    }
+    function state:uiSize() return UI_W, UI_H end
+    function state:isWideBattleLayout() return false end
+    function state:update(dt)
+      if self.finished then return end
+      self.elapsed = self.elapsed + (dt or 0)
+      if self.elapsed >= 1.15 then
+        self.finished = true
+        local stack = (self.game and self.game.stack) or StateStack
+        if stack and stack:top() == self then
+          stack:pop()
+        end
+        if self.onDone then
+          local cb = self.onDone
+          self.onDone = nil
+          cb()
+        end
+      end
+    end
+    function state:draw()
+      local baseText = Strings("LOGGING IN")
+      local dots = (self.elapsed < 0.35 and ".")
+        or (self.elapsed < 0.70 and "..")
+        or "..."
+      Font.drawBox(self.tx, self.ty, self.tw, self.th)
+      love.graphics.setColor(0, 0, 0, 1)
+      -- Anchor based on the full string with all 3 dots so base text never shifts
+      local fullWidth = Font.width(baseText .. " ...")
+      local baseX = self.tx * 8 + math.floor((self.tw * 8 - fullWidth) / 2)
+      local textY = (self.ty + 1) * 8
+      Font.draw(baseText .. " " .. dots, baseX, textY)
+      love.graphics.setColor(1, 1, 1, 1)
+    end
+    return state
+  end
+
   local originalPush = StateStack.push
   StateStack.push = function(stack, state, ...)
     -- The Pokemon Center PC builds its menu before pushing the stock
-    -- "turned on the PC" TextBox. Run that box's existing completion
-    -- callback immediately so the already-built menu opens directly.
+    -- "turned on the PC" TextBox. Run a short visual login transition
+    -- (~0.38s) before invoking its completion callback to open the menu.
     if state and state.gen1BetterMenusSkipCenterPCTurnOn then
       local onDone = state.onDone
       state.onDone = nil
-      if onDone then onDone() end
-      return
+      local loginState = createPCLoginTransition(stack.game or activeGame or Game, onDone)
+      return originalPush(stack, loginState)
     end
 
     -- The SAVE panel waits 30 frames before creating its TextBox. Widen it
@@ -4272,6 +4324,9 @@ end
             state.boxTx + state.boxTw - 1,
             state.boxTy + state.boxTh - 1)
         elseif stateMt == ChoiceBox then
+          out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), state.tx, state.ty,
+            state.tx + state.tw - 1, state.ty + state.th - 1)
+        elseif state and state.isPCLoginTransition then
           out[#out + 1] = PaletteFX.zone(effectiveMenuPalette(), state.tx, state.ty,
             state.tx + state.tw - 1, state.ty + state.th - 1)
         elseif stateMt == TrainerCard then
